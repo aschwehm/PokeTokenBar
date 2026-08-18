@@ -23,15 +23,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let pet = MenuItem::with_id(app, "pet", "Toggle Desktop Pet", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&toggle, &pet, &refresh, &quit])?;
-
-    TrayIconBuilder::new()
+    let mut builder = TrayIconBuilder::new()
         .tooltip("PokeTokenBar")
-        .icon(
-            app.default_window_icon()
-                .cloned()
-                .expect("default window icon"),
-        )
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -53,8 +46,13 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             {
                 toggle_window(tray.app_handle());
             }
-        })
-        .build(app)?;
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+
+    builder.build(app)?;
 
     Ok(())
 }
