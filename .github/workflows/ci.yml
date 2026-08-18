@@ -70,3 +70,6 @@ jobs:
       - name: Run tests
         working-directory: src-tauri
         run: cargo test
+
+      - name: Build Tauri bundles
+        run: npm run tauri build

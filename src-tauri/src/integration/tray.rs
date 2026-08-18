@@ -19,10 +19,11 @@ fn toggle_window(app: &AppHandle) {
 }
 
 pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
-    let toggle = MenuItem::with_id(app, "toggle", "Show / Hide", true, None::<&str>)?;
+    let toggle = MenuItem::with_id(app, "toggle", "Show / Hide Popover", true, None::<&str>)?;
+    let pet = MenuItem::with_id(app, "pet", "Toggle Desktop Pet", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&toggle, &refresh, &quit])?;
+    let menu = Menu::with_items(app, &[&toggle, &pet, &refresh, &quit])?;
 
     TrayIconBuilder::new()
         .tooltip("PokeTokenBar")
@@ -35,6 +36,9 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "toggle" => toggle_window(app),
+            "pet" => {
+                let _ = crate::integration::app::toggle_pet_window(app.clone());
+            }
             "refresh" => {
                 let _ = app.emit("tray-refresh", ());
             }

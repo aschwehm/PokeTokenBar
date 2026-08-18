@@ -11,12 +11,21 @@
 //! - Dedup by the turn's own globally-unique id; timestamp by turn time;
 //!   subagent sessions fold into their parent.
 
+pub mod additional;
+pub mod antigravity;
 pub mod cache;
+pub mod claude_limits;
 pub mod local;
 pub mod pokeapi;
 pub mod reader;
 
+pub use additional::{
+    LocalCopilotProvider, LocalCursorProvider, LocalHermesProvider, LocalKiroProvider,
+    LocalOpenCodeProvider,
+};
+pub use antigravity::LocalAntigravityProvider;
 pub use cache::LocalUsageCache;
+pub use claude_limits::{fetch_claude_limits, read_claude_credentials, LimitStatus, LimitWindow};
 pub use local::{LocalClaudeProvider, LocalCodexProvider, LocalGeminiProvider, LocalGrokProvider};
 pub use pokeapi::{
     BaseSpecies, ChainDTO, ChainLink, NameDTO, NamedRef, PokeAPIClient, PokeError, PokeProvider,

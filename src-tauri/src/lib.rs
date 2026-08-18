@@ -25,6 +25,11 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]),
+        ))
         .manage(state)
         .setup(|app| {
             integration::tray::setup_tray(app.handle())?;
@@ -40,6 +45,8 @@ pub fn run() {
             integration::app::set_language,
             integration::app::consume_celebration,
             integration::app::consume_feedback,
+            integration::app::toggle_pet_window,
+            integration::app::get_sprite,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

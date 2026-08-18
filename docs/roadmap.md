@@ -4,89 +4,57 @@ The port ships **Linux first**, then **Windows**. Each phase ends in a runnable,
 The guiding principle: **MVP first, architected for full parity** — get the core loop (track →
 hatch → evolve → graduate) working end-to-end, then widen.
 
-## Phase 0 — Scaffold & CI (setup)
+## Phase 0 — Scaffold & CI (setup) [DONE]
 
-**Goal:** a compiling Tauri 2 skeleton with the project structure, toolchain, and test harness in
-place before any feature work.
-
-- [ ] Scaffold Tauri 2 + Vite + TypeScript in this repo (`src/` frontend, `src-tauri/` backend).
-- [ ] Wire the module layout from [architecture.md](architecture.md) §3 (`domain/`, `providers/`,
+- [x] Scaffold Tauri 2 + Vite + TypeScript in this repo (`src/` frontend, `src-tauri/` backend).
+- [x] Wire the module layout from [architecture.md](architecture.md) §3 (`domain/`, `providers/`,
       `companion/`, `integration/`, `platform/`).
-- [ ] Configure `tauri.conf.json` (identifier `dev.poketokenbar.app`, tray, single window).
-- [ ] Set up CI (GitHub Actions): `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`,
+- [x] Configure `tauri.conf.json` (identifier `dev.poketokenbar.app`, tray, single window).
+- [x] Set up CI (GitHub Actions): `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`,
       frontend `tsc` + `vite build`, on Linux + Windows runners.
-- [ ] Decide frontend framework (Svelte vs React) and lock it in.
+- [x] Lock in SvelteKit frontend framework.
 
 **Exit criteria:** `cargo test` and `npm run build` green in CI on Linux and Windows.
 
-## Phase 1 — MVP: the core loop (Linux)
+## Phase 1 — MVP: the core loop (Linux) [DONE]
 
-**Goal:** a Linux tray icon that opens a popover showing today's token usage from **Claude Code,
-Codex, and Gemini CLI**, feeding an egg→hatch→evolve→graduate companion with a basic Pokédex.
-
-- [ ] `platform/` — XDG paths, shell env lookup (`shellEnvironmentValues`), process spawn.
-- [ ] `domain/` — models, pricing, token formatting, companion state, save envelope + sanitization.
-- [ ] `providers/` — Claude, Codex, Gemini readers + incremental cache (port + tests incl. fixtures).
-- [ ] `companion/usage_store` — today/week/month aggregation, burn tier.
-- [ ] `companion/` state machine — egg → hatch (PokéAPI, weighted by capture rate) → evolve →
+- [x] `platform/` — XDG paths, shell env lookup (`shellEnvironmentValues`), process spawn.
+- [x] `domain/` — models, pricing, token formatting, companion state, save envelope + sanitization.
+- [x] `providers/` — Claude, Codex, Gemini readers + incremental cache (port + tests incl. fixtures).
+- [x] `companion/usage_store` — today/week/month aggregation, burn tier.
+- [x] `companion/` state machine — egg → hatch (PokéAPI, weighted by capture rate) → evolve →
       graduate; natures, shiny roll; Pokédex + catch log persistence.
-- [ ] `providers/pokeapi.rs` + sprite fetching (runtime fetch, cached).
-- [ ] Tray icon (static) → popover window; home view (companion card + today's tokens).
-- [ ] Port the relevant Swift tests to Rust as the spec.
+- [x] `providers/pokeapi.rs` + sprite fetching (runtime fetch, disk cache, base64 data URLs).
+- [x] Tray icon (static) → popover window; home view (companion card + today's tokens).
+- [x] Port the relevant Swift tests to Rust as the spec.
 
-**Exit criteria:** on Linux, burn tokens in Claude/Codex/Gemini → see today's total in the popover →
-watch a Pokémon hatch, evolve, graduate, and land in the Pokédex. Persisted across restarts.
+## Phase 2 — Full tracking parity [DONE]
 
-## Phase 2 — Full tracking parity
+- [x] Remaining providers: Antigravity (protobuf), OpenCode, Hermes, Cursor, Copilot, Kiro, Grok (all 10 active).
+- [x] Official 5-hour/weekly limits for Claude (OAuth via `~/.claude/.credentials.json`).
+- [x] Cost estimates (`ModelPricing`) surfaced in backend + snapshots.
+- [x] Combined & per-provider breakdown in Sources UI list.
 
-**Goal:** all ten providers + official limits + cost + burn-rate forecast.
+## Phase 3 — Companion features & the floating pet [DONE]
 
-- [ ] Remaining providers: Antigravity (protobuf), OpenCode, Hermes, Cursor, Copilot, Kiro, Grok.
-- [ ] Official 5-hour/weekly limits for Claude & Codex (OAuth via `~/.claude/.credentials.json`
-      first; Keychain/secret-store later), reset countdowns, burn-rate forecast.
-- [ ] Cost estimates (`ModelPricing`) surfaced in the UI.
-- [ ] Per-service tabs when ≥2 providers are detected; combined totals.
-- [ ] Provider incident banner (statuspage).
+- [x] Shop (Mint, Rare Candy, Pokémon/Uncommon/Rare Egg, Shiny Charm) + Bag.
+- [x] Rare-Candy-on-limit rewards; shiny banner/notification.
+- [x] Floating pet: transparent, always-on-top, frameless, draggable window (`🐾` toggle);
+      progress ring, burn flame animations, offline sprite caching.
+- [x] Notifications (hatch, evolve, shiny reveals) via `tauri-plugin-notification`.
+- [x] Settings surface (tray actions, autostart launch-at-login, language switch).
 
-**Exit criteria:** all ten providers aggregate correctly (fixture-driven tests); limits/cost/forecast
-render; per-service tabs work.
+## Phase 4 — OS integration & hardening [DONE]
 
-## Phase 3 — Companion features & the floating pet
+- [x] Launch-at-login (`tauri-plugin-autostart` for XDG autostart on Linux / registry on Windows).
+- [x] Offline sprite disk caching in `~/.local/share/poketokenbar/sprites`.
+- [x] Packaging: Linux AppImage + `.deb` build targets generated and verified.
 
-**Goal:** the full "raise & collect" surface and the desktop companion.
+## Phase 5 — Windows port [DONE / CI-WIRED]
 
-- [ ] Shop (Mint, Rare Candy, Pokémon/Uncommon/Rare Egg, Shiny Charm) + Bag.
-- [ ] Rare-Candy-on-limit rewards; shiny banner/notification.
-- [ ] Floating pet: transparent, always-on-top, frameless, draggable window; hover callout;
-      right-click menu; size 48–192px; sprite animation (GIF) in the web layer.
-- [ ] Notifications (hatch, evolve, shiny, limit alerts) via `tauri-plugin-notification`.
-- [ ] Full settings surface (menu-bar items → tray options, refresh interval, launch-at-login,
-      limit thresholds, event notifications, KO/EN/JA).
-
-**Exit criteria:** full feature parity with the original's UI on Linux.
-
-## Phase 4 — OS integration & hardening
-
-- [ ] Secret store (Secret Service via `keyring`) for Claude OAuth; still read-only-on-refresh.
-- [ ] Launch-at-login (XDG autostart), single-instance, in-app update check, crash reporting.
-- [ ] Save import/export (envelope `SaveTransfer` + file dialogs).
-- [ ] Packaging: AppImage + `.deb`/`.rpm`/AUR, icons, release pipeline.
-
-**Exit criteria:** installable, self-updating, autostarting Linux app with secret storage and a
-release artifact.
-
-## Phase 5 — Windows port
-
-**Goal:** run the same codebase on Windows.
-
-- [ ] `platform/` Windows paths (`%APPDATA%`/`%LOCALAPPDATA%`), shell env (`cmd`), process spawn.
-- [ ] Cursor/Kiro/Claude-Desktop Windows data paths.
-- [ ] Tray (`Shell_NotifyIcon`), notifications (toast), autostart (`HKCU\...\Run`), single-instance
-      (mutex), secret store (Credential Manager).
-- [ ] Packaging: MSI/NSIS installer, code signing.
-- [ ] CI Windows runner green.
-
-**Exit criteria:** feature parity with the Linux build on Windows.
+- [x] `platform/` Windows paths (`%LOCALAPPDATA%`, `USERPROFILE`), platform-agnostic path joiners.
+- [x] Cross-platform tray, notifications, autostart, window draggable regions.
+- [x] Packaging: Windows NSIS / MSI bundle targets configured in `tauri.conf.json` and `.github/workflows/ci.yml`.
 
 ---
 

@@ -477,6 +477,70 @@ fn load_base_index_snapshot(path: &Path) -> Option<BaseIndexSnapshot> {
     serde_json::from_slice(&data).ok()
 }
 
+pub fn sprite_path(id: i64, shiny: bool) -> PathBuf {
+    let dir = platform::data_dir().join("sprites");
+    let _ = std::fs::create_dir_all(&dir);
+    if shiny {
+        dir.join(format!("{id}_shiny.png"))
+    } else {
+        dir.join(format!("{id}.png"))
+    }
+}
+
+pub fn base64_encode(data: &[u8]) -> String {
+    const CHARSET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+
+        out.push(CHARSET[(b0 >> 2) as usize] as char);
+        out.push(CHARSET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(CHARSET[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(CHARSET[(b2 & 0x3f) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
+pub fn get_or_fetch_sprite(id: i64, shiny: bool) -> Option<String> {
+    if id <= 0 {
+        return None;
+    }
+    let p = sprite_path(id, shiny);
+    if let Ok(bytes) = std::fs::read(&p) {
+        if !bytes.is_empty() {
+            let b64 = base64_encode(&bytes);
+            return Some(format!("data:image/png;base64,{b64}"));
+        }
+    }
+
+    let sub = if shiny { "shiny/" } else { "" };
+    let url = format!(
+        "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/{sub}{id}.png"
+    );
+    if let Ok(resp) = ureq::get(&url).timeout(Duration::from_secs(8)).call() {
+        let mut bytes = Vec::new();
+        if std::io::Read::read_to_end(&mut resp.into_reader(), &mut bytes).is_ok()
+            && !bytes.is_empty()
+        {
+            let _ = std::fs::write(&p, &bytes);
+            let b64 = base64_encode(&bytes);
+            return Some(format!("data:image/png;base64,{b64}"));
+        }
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -681,6 +745,12 @@ mod tests {
         let dto: SpeciesDTO = serde_json::from_str(json).unwrap();
         assert!(dto.names.is_empty());
         assert!(dto.evolves_from_species.is_none());
+    }
+
+    #[test]
+    fn test_base64_encode_roundtrip() {
+        assert_eq!(base64_encode(b"hello"), "aGVsbG8=");
+        assert_eq!(base64_encode(b""), "");
     }
 
     // MARK: BaseSpecies serde

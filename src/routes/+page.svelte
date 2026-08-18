@@ -1,6 +1,8 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { isEnabled, enable, disable } from "@tauri-apps/plugin-autostart";
   import { onMount } from "svelte";
 
   interface ShopEntry {
@@ -49,6 +51,19 @@
     monthTotalTokens: number;
   }
 
+  interface LimitWindow {
+    utilization?: number | null;
+    resetsAt?: string | null;
+  }
+
+  interface LimitStatus {
+    fiveHour?: LimitWindow | null;
+    sevenDay?: LimitWindow | null;
+    subscriptionType?: string | null;
+    rateLimitTier?: string | null;
+    planDisplay?: string | null;
+  }
+
   interface UsageView {
     todayTotalTokens: number;
     todayCostTotal: number;
@@ -56,6 +71,7 @@
     monthTotalTokens: number;
     burnTier: string;
     snapshots: ProviderView[];
+    limits?: LimitStatus | null;
   }
 
   interface Snapshot {
@@ -95,10 +111,79 @@
     snap = await invoke<Snapshot>("buy_egg", { tier });
   }
 
+  async function hideWindow() {
+    try {
+      await getCurrentWindow().hide();
+    } catch {
+      // ignore
+    }
+  }
+
+  async function togglePet() {
+    try {
+      await invoke("toggle_pet_window");
+    } catch {
+      // ignore
+    }
+  }
+
+  async function startDrag(e: MouseEvent) {
+    if (e.button === 0 && !(e.target as HTMLElement).closest("button")) {
+      try {
+        await getCurrentWindow().startDragging();
+      } catch (err) {
+        console.error("Failed to start dragging:", err);
+      }
+    }
+  }
+
+  let autostartActive = $state(false);
+  let spriteCache = $state<Record<string, string>>({});
+
+  async function checkAutostart() {
+    try {
+      autostartActive = await isEnabled();
+    } catch {
+      // ignore
+    }
+  }
+
+  async function toggleAutostart() {
+    try {
+      if (autostartActive) {
+        await disable();
+        autostartActive = false;
+      } else {
+        await enable();
+        autostartActive = true;
+      }
+    } catch (e) {
+      console.error("Autostart toggle failed:", e);
+    }
+  }
+
+  async function cacheSprite(id: number, shiny: boolean) {
+    const key = `${id}_${shiny}`;
+    if (spriteCache[key]) return;
+    try {
+      const data = await invoke<string | null>("get_sprite", { id, shiny });
+      if (data) {
+        spriteCache[key] = data;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   onMount(() => {
     refresh();
+    checkAutostart();
+    const interval = setInterval(() => {
+      refresh();
+    }, 60_000);
     const unlisten = listen("tray-refresh", () => refresh());
     return () => {
+      clearInterval(interval);
       unlisten.then((f) => f());
     };
   });
@@ -124,6 +209,9 @@
   }
 
   function spriteUrl(id: number, shiny: boolean): string {
+    const key = `${id}_${shiny}`;
+    if (spriteCache[key]) return spriteCache[key];
+    cacheSprite(id, shiny);
     const dir = shiny ? "shiny/" : "";
     return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${dir}${id}.png`;
   }
@@ -155,14 +243,22 @@
 </script>
 
 <div class="app">
-  <header>
-    <div class="header-left">
+  <header data-tauri-drag-region onmousedown={startDrag} role="toolbar" aria-label="Window header" tabindex="-1">
+    <div class="header-left" data-tauri-drag-region>
       <span class="dot" class:ok={!loading}></span>
-      <span class="title">PokeTokenBar</span>
+      <span class="title" data-tauri-drag-region>PokeTokenBar</span>
     </div>
-    <button class="ghost" onclick={refresh} disabled={loading}>
-      {loading ? "…" : "↻"}
-    </button>
+    <div class="header-right">
+      <button class="ghost" onclick={togglePet} title="Toggle Floating Desktop Pet">
+        🐾
+      </button>
+      <button class="ghost" onclick={refresh} disabled={loading} title="Refresh">
+        {loading ? "…" : "↻"}
+      </button>
+      <button class="ghost close-btn" onclick={hideWindow} title="Hide window">
+        ✕
+      </button>
+    </div>
   </header>
 
   {#if error}
@@ -236,6 +332,35 @@
       </div>
     </section>
 
+    {#if u.limits && (u.limits.fiveHour?.utilization != null || u.limits.sevenDay?.utilization != null)}
+      <section class="limits-card">
+        <div class="limits-header">
+          <h3>Claude Limits</h3>
+          {#if u.limits.planDisplay}
+            <span class="plan-badge">{u.limits.planDisplay}</span>
+          {/if}
+        </div>
+        {#if u.limits.fiveHour && u.limits.fiveHour.utilization != null}
+          <div class="limit-row">
+            <div class="limit-labels">
+              <span>5-hour session</span>
+              <span>{(u.limits.fiveHour.utilization * 100).toFixed(0)}%</span>
+            </div>
+            <div class="bar"><div class="fill limit-fill" style="width: {Math.min(100, u.limits.fiveHour.utilization * 100).toFixed(1)}%"></div></div>
+          </div>
+        {/if}
+        {#if u.limits.sevenDay && u.limits.sevenDay.utilization != null}
+          <div class="limit-row">
+            <div class="limit-labels">
+              <span>Weekly limit</span>
+              <span>{(u.limits.sevenDay.utilization * 100).toFixed(0)}%</span>
+            </div>
+            <div class="bar"><div class="fill limit-fill" style="width: {Math.min(100, u.limits.sevenDay.utilization * 100).toFixed(1)}%"></div></div>
+          </div>
+        {/if}
+      </section>
+    {/if}
+
     {#if u.snapshots.length}
       <section>
         <h3>Sources</h3>
@@ -302,6 +427,19 @@
         </div>
       {/if}
     </section>
+
+    <section>
+      <h3>Settings</h3>
+      <div class="settings-row">
+        <span>Launch at login</span>
+        <input
+          type="checkbox"
+          checked={autostartActive}
+          onchange={toggleAutostart}
+          aria-label="Launch at login"
+        />
+      </div>
+    </section>
   {:else if !loading}
     <p class="sub">Loading…</p>
   {/if}
@@ -333,12 +471,36 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 10px;
+    cursor: grab;
+  }
+
+  header:active {
+    cursor: grabbing;
   }
 
   .header-left {
     display: flex;
     align-items: center;
     gap: 8px;
+    cursor: grab;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: default;
+  }
+
+  .close-btn {
+    font-size: 11px;
+    padding: 4px 7px;
+  }
+
+  .close-btn:hover {
+    background: #4a2525;
+    border-color: #703333;
+    color: #ff9999;
   }
 
   .dot {
@@ -485,7 +647,8 @@
   .source,
   .shop-row,
   .bag-item,
-  .dex-item {
+  .dex-item,
+  .settings-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -522,6 +685,51 @@
   .dex-rarity {
     font-size: 11px;
     color: #8a93a3;
+  }
+
+  .limits-card {
+    background: #1f232d;
+    border: 1px solid #2c3240;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+
+  .limits-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .limits-header h3 {
+    margin-bottom: 0;
+  }
+
+  .plan-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: #343b48;
+    color: #92a4ff;
+    border: 1px solid #4a5470;
+  }
+
+  .limit-row {
+    margin-top: 6px;
+  }
+
+  .limit-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #a0a8b7;
+    margin-bottom: 3px;
+  }
+
+  .limit-fill {
+    background: linear-gradient(90deg, #49c66c, #e5a93c);
   }
 
   .error {

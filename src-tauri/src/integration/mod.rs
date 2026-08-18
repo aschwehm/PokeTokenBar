@@ -10,4 +10,5 @@
 //! services directly.
 
 pub mod app;
+pub mod notify;
 pub mod tray;

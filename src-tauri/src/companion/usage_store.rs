@@ -397,15 +397,20 @@ impl UsageStore {
 }
 
 impl Default for UsageStore {
-    /// Default providers: the local log-based readers ported so far (Claude
-    /// Code, Codex, Gemini, Grok). The remaining providers (Antigravity,
-    /// OpenCode, Hermes, Cursor, Copilot, Kiro) land in Phase 2.
+    /// Default providers: all ten providers (Claude Code, Codex, Gemini, Grok,
+    /// Antigravity, OpenCode, Hermes Agent, Cursor, Copilot, Kiro).
     fn default() -> Self {
         Self::new(vec![
             Box::new(crate::providers::local::LocalClaudeProvider),
             Box::new(crate::providers::local::LocalCodexProvider),
             Box::new(crate::providers::local::LocalGeminiProvider),
             Box::new(crate::providers::local::LocalGrokProvider),
+            Box::new(crate::providers::antigravity::LocalAntigravityProvider),
+            Box::new(crate::providers::additional::LocalOpenCodeProvider),
+            Box::new(crate::providers::additional::LocalHermesProvider),
+            Box::new(crate::providers::additional::LocalCursorProvider),
+            Box::new(crate::providers::additional::LocalCopilotProvider),
+            Box::new(crate::providers::additional::LocalKiroProvider),
         ])
     }
 }

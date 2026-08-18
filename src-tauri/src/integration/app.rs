@@ -20,6 +20,7 @@ pub type AppState = Arc<Mutex<StateInner>>;
 pub struct StateInner {
     pub usage: UsageStore,
     pub companion: CompanionStore,
+    pub limits: Option<crate::providers::claude_limits::LimitStatus>,
 }
 
 impl StateInner {
@@ -27,11 +28,19 @@ impl StateInner {
         Self {
             usage: UsageStore::default(),
             companion: CompanionStore::new_default(),
+            limits: None,
         }
     }
 
     fn refresh(&mut self) {
         self.usage.refresh(&mut self.companion);
+        if let Some(cred) = crate::providers::claude_limits::read_claude_credentials(None) {
+            if !cred.is_expired() {
+                if let Ok(status) = crate::providers::claude_limits::fetch_claude_limits(&cred) {
+                    self.limits = Some(status);
+                }
+            }
+        }
     }
 }
 
@@ -120,6 +129,7 @@ pub struct UsageView {
     pub menu_lines: Vec<String>,
     pub snapshots: Vec<ProviderView>,
     pub last_updated: Option<i64>,
+    pub limits: Option<crate::providers::claude_limits::LimitStatus>,
 }
 
 #[derive(Serialize)]
@@ -289,6 +299,7 @@ fn build_snapshot(inner: &StateInner) -> Snapshot {
         menu_lines: u.menu_lines(),
         snapshots: u.snapshots.iter().map(provider_view).collect(),
         last_updated: u.last_updated.map(|d| d.timestamp_millis()),
+        limits: inner.limits.clone(),
     };
 
     Snapshot { companion, usage }
@@ -303,11 +314,45 @@ pub fn snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
 }
 
 #[tauri::command]
-pub async fn refresh(state: State<'_, AppState>) -> Result<Snapshot, String> {
+pub async fn refresh(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Snapshot, String> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut inner = state.lock().map_err(|e| e.to_string())?;
+        let prev_seq = inner.companion.celebration_seq;
         inner.refresh();
+        if inner.companion.celebration_seq > prev_seq {
+            if let Some(c) = inner.companion.celebration {
+                let (title, body) = match c {
+                    Celebration::Hatch { shiny } => (
+                        if shiny {
+                            "Shiny Pokémon Hatched! ✨"
+                        } else {
+                            "Pokémon Hatched! 🐣"
+                        },
+                        format!("Your egg hatched into {}!", inner.companion.display_name()),
+                    ),
+                    Celebration::Evolve => (
+                        "Pokémon Evolved! 🌟",
+                        format!(
+                            "Your partner evolved into {}!",
+                            inner.companion.display_name()
+                        ),
+                    ),
+                    Celebration::DittoReveal { shiny } => (
+                        if shiny {
+                            "Shiny Ditto Discovered! ✨"
+                        } else {
+                            "Ditto Discovered! 🟣"
+                        },
+                        "Your Pokémon transformed back into Ditto!".to_string(),
+                    ),
+                };
+                crate::integration::notify::send_notification(&app, title, &body);
+            }
+        }
         Ok(build_snapshot(&inner))
     })
     .await
@@ -329,11 +374,27 @@ pub async fn buy_item(state: State<'_, AppState>, kind: String) -> Result<Snapsh
 }
 
 #[tauri::command]
-pub async fn use_rare_candy(state: State<'_, AppState>) -> Result<Snapshot, String> {
+pub async fn use_rare_candy(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Snapshot, String> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut inner = state.lock().map_err(|e| e.to_string())?;
+        let prev_seq = inner.companion.celebration_seq;
         inner.companion.use_rare_candy();
+        if inner.companion.celebration_seq > prev_seq {
+            if let Some(Celebration::Evolve) = inner.companion.celebration {
+                crate::integration::notify::send_notification(
+                    &app,
+                    "Pokémon Evolved! 🌟",
+                    &format!(
+                        "Your partner evolved into {}!",
+                        inner.companion.display_name()
+                    ),
+                );
+            }
+        }
         Ok(build_snapshot(&inner))
     })
     .await
@@ -387,6 +448,32 @@ pub fn consume_feedback(state: State<'_, AppState>) -> Result<Snapshot, String> 
     inner.companion.consume_candy_feedback();
     inner.companion.consume_mint_feedback();
     Ok(build_snapshot(&inner))
+}
+
+#[tauri::command]
+pub fn toggle_pet_window(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("pet") {
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+            Ok(false)
+        } else {
+            let _ = window.show();
+            let _ = window.set_focus();
+            Ok(true)
+        }
+    } else {
+        Err("Pet window not configured".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn get_sprite(id: i64, shiny: bool) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(crate::providers::pokeapi::get_or_fetch_sprite(id, shiny))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn parse_item_kind(s: &str) -> Option<ItemKind> {
