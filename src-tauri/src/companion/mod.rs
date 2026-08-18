@@ -9,5 +9,7 @@
 //! in the `providers/` module.
 
 pub mod store;
+pub mod usage_store;
 
 pub use store::*;
+pub use usage_store::*;
