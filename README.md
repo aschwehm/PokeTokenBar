@@ -8,8 +8,11 @@ Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI, Copilot CLI, Kiro CLI) in
 Pokémon companion. The original is written in **Swift 6 + SwiftUI + AppKit**; this port re-implements
 it with **Tauri 2** (Rust core + web frontend) so it runs on **Linux** first and **Windows** after.
 
-> ⚠️ **Status: planning / pre-MVP.** The repository currently contains design documentation only.
-> No buildable code yet. See [docs/roadmap.md](docs/roadmap.md) for what's next.
+> **Status: MVP (Linux).** The full backend (token parsers, companion state machine, PokéAPI
+> client) is ported and tested (315 tests); a tray icon + popover UI reads Claude Code / Codex /
+> Gemini / Grok usage and drives an egg→hatch→evolve→graduate companion. Remaining providers,
+> official limits, notifications, the floating pet, and Windows packaging land in later phases.
+> Run with `npm run tauri dev`. See [docs/roadmap.md](docs/roadmap.md) for what's next.
 
 ## Why a port (and why Tauri)
 
