@@ -10,3 +10,10 @@
 //! - External log formats are validated against the upstream *writer*.
 //! - Dedup by the turn's own globally-unique id; timestamp by turn time;
 //!   subagent sessions fold into their parent.
+
+pub mod reader;
+
+pub use reader::{
+    active_block, claude_entries, claude_entries_in_root, claude_project_roots, codex_entries,
+    daily, dedup_keep_max, gemini_entries, grok_entries, period, Entry,
+};

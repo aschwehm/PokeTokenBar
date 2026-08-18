@@ -2565,6 +2565,7 @@ dependencies = [
  "tauri-plugin-opener",
  "thiserror 2.0.20",
  "uuid",
+ "walkdir",
 ]
 
 [[package]]
