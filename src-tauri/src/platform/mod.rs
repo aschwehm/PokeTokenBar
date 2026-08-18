@@ -7,3 +7,8 @@
 //!
 //! Single source of truth for env lookup — no provider reads a usage-location
 //! environment variable directly (see docs/architecture.md §7).
+
+pub mod app_env;
+pub mod binary_locator;
+pub mod env;
+pub mod log;
