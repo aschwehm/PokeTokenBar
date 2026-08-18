@@ -229,6 +229,20 @@ pub enum ItemKind {
 }
 
 impl ItemKind {
+    /// All item kinds in declaration order — the canonical bag/shop iteration
+    /// order (mirrors Swift's `ItemKind.allCases`).
+    pub const ALL: [ItemKind; 3] = [ItemKind::RareCandy, ItemKind::Mint, ItemKind::ShinyCharm];
+
+    /// The raw string key under which this item is stored in
+    /// `CompanionState.inventory` (matches the serialized `camelCase` raw value).
+    pub fn raw_value(&self) -> &'static str {
+        match self {
+            ItemKind::RareCandy => "rareCandy",
+            ItemKind::Mint => "mint",
+            ItemKind::ShinyCharm => "shinyCharm",
+        }
+    }
+
     /// PokéAPI item sprite file name (.../sprites/items/{name}.png).
     /// nil = no sprite (emoji fallback only).
     pub fn sprite_name(&self) -> Option<&'static str> {

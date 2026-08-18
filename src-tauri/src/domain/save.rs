@@ -71,6 +71,9 @@ pub enum SaveTransferError {
     /// import must stop.
     #[error("backup failed")]
     BackupFailed,
+    /// The state could not be serialized for export (never expected in practice).
+    #[error("could not serialize save data")]
+    Serialization,
 }
 
 /// Import confirmation button layout. Kept out of AppKit because this rule is

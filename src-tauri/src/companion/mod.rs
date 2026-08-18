@@ -7,3 +7,7 @@
 //!
 //! Aggregation is provider-agnostic by design; provider-specific behavior lives
 //! in the `providers/` module.
+
+pub mod store;
+
+pub use store::*;

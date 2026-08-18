@@ -442,6 +442,22 @@ impl Default for PokeAPIClient {
     }
 }
 
+/// A fresh client with its own empty caches (caches are an optimization only —
+/// correctness never depends on them), so `PokeAPIClient::shared().clone()`
+/// yields an independently usable client.
+impl Clone for PokeAPIClient {
+    fn clone(&self) -> Self {
+        Self {
+            base_url: self.base_url.clone(),
+            lang_codes: self.lang_codes,
+            species_cache: Mutex::new(HashMap::new()),
+            line_cache: Mutex::new(HashMap::new()),
+            base_index_cache: Mutex::new(None),
+            base_index_file: self.base_index_file.clone(),
+        }
+    }
+}
+
 impl PokeProvider for PokeAPIClient {
     fn line(&self, base_species_id: i64) -> Result<EvoLine, PokeError> {
         PokeAPIClient::line(self, base_species_id)
