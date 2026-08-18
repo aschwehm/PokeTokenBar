@@ -1,0 +1,30 @@
+# --- Node / SvelteKit frontend ---
+node_modules/
+/build
+/.svelte-kit
+/package
+.env
+.env.*
+!.env.example
+*.log
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# --- Rust / Tauri backend (also see src-tauri/.gitignore) ---
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# --- Editor / OS ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- Build / release artifacts ---
+release/
+*.AppImage
+*.deb
+*.rpm
+*.msi
+*.exe
