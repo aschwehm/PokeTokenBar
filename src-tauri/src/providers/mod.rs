@@ -13,10 +13,15 @@
 
 pub mod cache;
 pub mod local;
+pub mod pokeapi;
 pub mod reader;
 
 pub use cache::LocalUsageCache;
 pub use local::{LocalClaudeProvider, LocalCodexProvider, LocalGeminiProvider, LocalGrokProvider};
+pub use pokeapi::{
+    BaseSpecies, ChainDTO, ChainLink, NameDTO, NamedRef, PokeAPIClient, PokeError, PokeProvider,
+    SpeciesDTO, URLRef,
+};
 pub use reader::{
     active_block, claude_entries, claude_entries_in_root, claude_project_roots, codex_entries,
     daily, dedup_keep_max, gemini_entries, grok_entries, period, Entry,
