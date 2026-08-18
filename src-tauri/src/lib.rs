@@ -15,17 +15,32 @@ pub mod integration;
 pub mod platform;
 pub mod providers;
 
-/// Placeholder command (replaced by real commands in Phase 1).
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {name}! You've been greeted from Rust!")
-}
+use std::sync::{Arc, Mutex};
+
+use integration::app::{AppState, StateInner};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let state: AppState = Arc::new(Mutex::new(StateInner::new()));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .manage(state)
+        .setup(|app| {
+            integration::tray::setup_tray(app.handle())?;
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            integration::app::snapshot,
+            integration::app::refresh,
+            integration::app::buy_item,
+            integration::app::use_rare_candy,
+            integration::app::use_mint,
+            integration::app::buy_egg,
+            integration::app::set_language,
+            integration::app::consume_celebration,
+            integration::app::consume_feedback,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

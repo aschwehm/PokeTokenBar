@@ -1,0 +1,403 @@
+//! App state and the Rust↔frontend command bridge.
+//!
+//! Holds the [`UsageStore`] and [`CompanionStore`] behind a mutex and exposes a
+//! serializable [`Snapshot`] to the webview, plus the mutating commands the UI
+//! invokes (refresh, buy, use items, hatch, set language).
+
+use std::sync::{Arc, Mutex};
+
+use serde::Serialize;
+use tauri::State;
+
+use crate::companion::store::{BurnTier, Celebration, CompanionStore, DexSpecies};
+use crate::companion::usage_store::UsageStore;
+use crate::domain::companion::{AppLanguage, CompanionState, CompanionStateKind, ItemKind, Rarity};
+use crate::domain::models::ProviderSnapshot;
+
+/// The single managed app state, shared with Tauri as `tauri::State`.
+pub type AppState = Arc<Mutex<StateInner>>;
+
+pub struct StateInner {
+    pub usage: UsageStore,
+    pub companion: CompanionStore,
+}
+
+impl StateInner {
+    pub fn new() -> Self {
+        Self {
+            usage: UsageStore::default(),
+            companion: CompanionStore::new_default(),
+        }
+    }
+
+    fn refresh(&mut self) {
+        self.usage.refresh(&mut self.companion);
+    }
+}
+
+impl Default for StateInner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// MARK: snapshot DTOs
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Snapshot {
+    pub companion: CompanionView,
+    pub usage: UsageView,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanionView {
+    /// The full persisted state (active mon / egg, dex, inventory, ledger).
+    pub state: CompanionState,
+    pub display_state: &'static str,
+    pub display_name: String,
+    pub is_egg: bool,
+    pub has_active: bool,
+    pub current_species_id: Option<i64>,
+    pub is_shiny: bool,
+    pub rarity: Option<&'static str>,
+    pub is_final_stage: bool,
+    pub stage_text: String,
+    pub progress: f64,
+    pub tokens_to_next: i64,
+    pub egg_progress: f64,
+    pub egg_tokens_to_hatch: i64,
+    pub available_tokens: i64,
+    pub owned_items: Vec<(String, i64)>,
+    pub shop: Vec<ShopView>,
+    pub dex: Vec<DexSpeciesView>,
+    pub celebration: Option<CelebrationView>,
+    pub celebration_seq: u64,
+    pub candy_feedback: Option<i64>,
+    pub mint_feedback: Option<String>,
+    pub just_evolved_to: Option<String>,
+    pub just_graduated: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShopView {
+    pub kind: String,
+    pub tier: Option<&'static str>,
+    pub price: i64,
+    pub can_buy: bool,
+    pub owned: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DexSpeciesView {
+    pub id: i64,
+    pub name: String,
+    pub rarity: &'static str,
+    pub is_shiny: bool,
+    pub is_raising: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CelebrationView {
+    pub kind: &'static str,
+    pub shiny: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageView {
+    pub today_total_tokens: i64,
+    pub today_cost_total: f64,
+    pub week_total_tokens: i64,
+    pub week_cost_total: f64,
+    pub month_total_tokens: i64,
+    pub month_cost_total: f64,
+    pub burn_tier: &'static str,
+    pub menu_lines: Vec<String>,
+    pub snapshots: Vec<ProviderView>,
+    pub last_updated: Option<i64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderView {
+    pub id: String,
+    pub display_name: String,
+    pub today_total_tokens: i64,
+    pub week_total_tokens: i64,
+    pub month_total_tokens: i64,
+}
+
+fn rarity_str(r: Rarity) -> &'static str {
+    match r {
+        Rarity::Common => "common",
+        Rarity::Uncommon => "uncommon",
+        Rarity::Rare => "rare",
+        Rarity::Legendary => "legendary",
+    }
+}
+
+fn state_kind_str(k: CompanionStateKind) -> &'static str {
+    match k {
+        CompanionStateKind::Egg => "egg",
+        CompanionStateKind::Idle => "idle",
+        CompanionStateKind::Working => "working",
+        CompanionStateKind::Focus => "focus",
+        CompanionStateKind::Tired => "tired",
+        CompanionStateKind::Sleep => "sleep",
+        CompanionStateKind::LevelUp => "levelUp",
+    }
+}
+
+fn burn_tier_str(b: BurnTier) -> &'static str {
+    match b {
+        BurnTier::Idle => "idle",
+        BurnTier::Normal => "normal",
+        BurnTier::Fast => "fast",
+        BurnTier::Blazing => "blazing",
+    }
+}
+
+fn celebration_view(c: Celebration) -> CelebrationView {
+    match c {
+        Celebration::Hatch { shiny } => CelebrationView {
+            kind: "hatch",
+            shiny,
+        },
+        Celebration::Evolve => CelebrationView {
+            kind: "evolve",
+            shiny: false,
+        },
+        Celebration::DittoReveal { shiny } => CelebrationView {
+            kind: "ditto",
+            shiny,
+        },
+    }
+}
+
+fn shop_view(kind: ItemKind, price: i64, can_buy: bool, owned: i64) -> ShopView {
+    ShopView {
+        kind: kind.raw_value().to_string(),
+        tier: None,
+        price,
+        can_buy,
+        owned,
+    }
+}
+
+fn egg_shop_view(tier: Option<Rarity>, price: i64, can_buy: bool) -> ShopView {
+    ShopView {
+        kind: "egg".to_string(),
+        tier: tier.map(rarity_str),
+        price,
+        can_buy,
+        owned: 0,
+    }
+}
+
+fn provider_view(s: &ProviderSnapshot) -> ProviderView {
+    ProviderView {
+        id: s.provider_id.clone(),
+        display_name: s.display_name.clone(),
+        today_total_tokens: s.today.as_ref().map(|t| t.total_tokens).unwrap_or(0),
+        week_total_tokens: s.week_total.as_ref().map(|w| w.total_tokens).unwrap_or(0),
+        month_total_tokens: s.month_total.as_ref().map(|m| m.total_tokens).unwrap_or(0),
+    }
+}
+
+fn build_snapshot(inner: &StateInner) -> Snapshot {
+    let c = &inner.companion;
+    let u = &inner.usage;
+
+    let shop: Vec<ShopView> = c
+        .shop_entries()
+        .into_iter()
+        .map(|entry| match entry {
+            crate::domain::companion::ShopEntry::Item(kind) => {
+                let owned = c.item_count(kind);
+                shop_view(kind, entry.price(), c.can_buy(kind), owned)
+            }
+            crate::domain::companion::ShopEntry::Egg(tier) => {
+                egg_shop_view(tier, entry.price(), c.can_buy_egg(tier))
+            }
+        })
+        .collect();
+
+    let dex: Vec<DexSpeciesView> = c
+        .dex_species()
+        .into_iter()
+        .map(|d: DexSpecies| DexSpeciesView {
+            id: d.id,
+            name: d.name,
+            rarity: rarity_str(d.rarity),
+            is_shiny: d.is_shiny,
+            is_raising: d.is_raising,
+        })
+        .collect();
+
+    let owned_items: Vec<(String, i64)> = c
+        .owned_items()
+        .into_iter()
+        .map(|(kind, count)| (kind.raw_value().to_string(), count))
+        .collect();
+
+    let companion = CompanionView {
+        state: c.state.clone(),
+        display_state: state_kind_str(c.display_state),
+        display_name: c.display_name(),
+        is_egg: c.is_egg(),
+        has_active: c.has_active(),
+        current_species_id: c.current_species_id(),
+        is_shiny: c.current_is_shiny(),
+        rarity: c.rarity().map(rarity_str),
+        is_final_stage: c.is_final_stage(),
+        stage_text: c.stage_text(),
+        progress: c.progress(),
+        tokens_to_next: c.tokens_to_next(),
+        egg_progress: c.egg_progress(),
+        egg_tokens_to_hatch: c.egg_tokens_to_hatch(),
+        available_tokens: c.available_tokens(),
+        owned_items,
+        shop,
+        dex,
+        celebration: c.celebration.map(celebration_view),
+        celebration_seq: c.celebration_seq,
+        candy_feedback: if c.candy_feedback_amount > 0 {
+            Some(c.candy_feedback_amount)
+        } else {
+            None
+        },
+        mint_feedback: c
+            .mint_feedback_nature
+            .map(|n| n.name(c.language()).to_string()),
+        just_evolved_to: c.just_evolved_to.clone(),
+        just_graduated: c.just_graduated.clone(),
+    };
+
+    let usage = UsageView {
+        today_total_tokens: u.today_total_tokens(),
+        today_cost_total: u.today_cost_total(),
+        week_total_tokens: u.week_total_tokens(),
+        week_cost_total: u.week_cost_total(),
+        month_total_tokens: u.month_total_tokens(),
+        month_cost_total: u.month_cost_total(),
+        burn_tier: burn_tier_str(u.burn_tier()),
+        menu_lines: u.menu_lines(),
+        snapshots: u.snapshots.iter().map(provider_view).collect(),
+        last_updated: u.last_updated.map(|d| d.timestamp_millis()),
+    };
+
+    Snapshot { companion, usage }
+}
+
+// MARK: commands
+
+#[tauri::command]
+pub fn snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
+    let inner = state.lock().map_err(|e| e.to_string())?;
+    Ok(build_snapshot(&inner))
+}
+
+#[tauri::command]
+pub async fn refresh(state: State<'_, AppState>) -> Result<Snapshot, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut inner = state.lock().map_err(|e| e.to_string())?;
+        inner.refresh();
+        Ok(build_snapshot(&inner))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn buy_item(state: State<'_, AppState>, kind: String) -> Result<Snapshot, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut inner = state.lock().map_err(|e| e.to_string())?;
+        if let Some(item) = parse_item_kind(&kind) {
+            inner.companion.buy(item);
+        }
+        Ok(build_snapshot(&inner))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn use_rare_candy(state: State<'_, AppState>) -> Result<Snapshot, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut inner = state.lock().map_err(|e| e.to_string())?;
+        inner.companion.use_rare_candy();
+        Ok(build_snapshot(&inner))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn use_mint(state: State<'_, AppState>) -> Result<Snapshot, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut inner = state.lock().map_err(|e| e.to_string())?;
+        inner.companion.use_mint();
+        Ok(build_snapshot(&inner))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn buy_egg(state: State<'_, AppState>, tier: Option<String>) -> Result<Snapshot, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut inner = state.lock().map_err(|e| e.to_string())?;
+        let tier = tier.and_then(|t| parse_rarity(&t));
+        inner.companion.buy_egg(tier);
+        Ok(build_snapshot(&inner))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub fn set_language(state: State<'_, AppState>, lang: String) -> Result<Snapshot, String> {
+    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    if let Some(l) = AppLanguage::from_raw(&lang) {
+        inner.companion.set_language(l);
+    }
+    Ok(build_snapshot(&inner))
+}
+
+#[tauri::command]
+pub fn consume_celebration(state: State<'_, AppState>) -> Result<Snapshot, String> {
+    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    inner.companion.celebration = None;
+    Ok(build_snapshot(&inner))
+}
+
+#[tauri::command]
+pub fn consume_feedback(state: State<'_, AppState>) -> Result<Snapshot, String> {
+    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    inner.companion.consume_candy_feedback();
+    inner.companion.consume_mint_feedback();
+    Ok(build_snapshot(&inner))
+}
+
+fn parse_item_kind(s: &str) -> Option<ItemKind> {
+    match s {
+        "rareCandy" => Some(ItemKind::RareCandy),
+        "mint" => Some(ItemKind::Mint),
+        "shinyCharm" => Some(ItemKind::ShinyCharm),
+        _ => None,
+    }
+}
+
+fn parse_rarity(s: &str) -> Option<Rarity> {
+    Rarity::from_raw(s)
+}

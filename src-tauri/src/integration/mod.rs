@@ -8,3 +8,6 @@
 //! Linux → Secret Service / XDG autostart / DBus; Windows → Credential Manager /
 //! `HKCU\...\Run` / named mutex. The rest of the app never talks to these
 //! services directly.
+
+pub mod app;
+pub mod tray;

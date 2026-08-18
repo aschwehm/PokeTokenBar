@@ -12,9 +12,15 @@
   "app": {
     "windows": [
       {
-        "title": "poketokenbar",
-        "width": 800,
-        "height": 600
+        "label": "main",
+        "title": "PokeTokenBar",
+        "width": 380,
+        "height": 560,
+        "resizable": false,
+        "decorations": false,
+        "skipTaskbar": true,
+        "alwaysOnTop": true,
+        "visible": false
       }
     ],
     "security": {
