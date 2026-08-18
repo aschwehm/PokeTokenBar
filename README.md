@@ -47,6 +47,12 @@ arbitrary animation or text — only a static icon + tooltip. On these platforms
 - **Floating pet** (desktop widget) = where the animated sprite + live count live. This is already a
   first-class feature in the original and ports cleanly.
 
+## AI Vibe-Coding Disclaimer
+
+> [!WARNING]
+> This port was **completely vibe-coded** using **DeepSeek V4 Pro** and **Gemini 3.7 Flash**.
+> While backed by 333 passing unit tests ported from the original Swift reference test suite, **use at your own risk**!
+
 ## License & disclaimer
 
 This project is an **unofficial, non-commercial fan project**. It is not affiliated with,
@@ -59,4 +65,4 @@ fetched at runtime from the public [PokéAPI](https://pokeapi.co) and cached loc
 device. The MIT license covers this project's original source code only; it grants no rights to any
 third-party trademarks, artwork, or data.
 
-The port is MIT-licensed. See [LICENSE](LICENSE) (to be added with the first code commit).
+The port is MIT-licensed. See [LICENSE](LICENSE).
