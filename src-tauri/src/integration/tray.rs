@@ -23,6 +23,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let pet = MenuItem::with_id(app, "pet", "Toggle Desktop Pet", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&toggle, &pet, &refresh, &quit])?;
     let mut builder = TrayIconBuilder::new()
         .tooltip("PokeTokenBar")
         .menu(&menu)
