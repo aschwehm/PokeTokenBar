@@ -525,7 +525,11 @@ mod tests {
         let mut state = StateInner::new();
         state.refresh();
         for snap in &state.usage.snapshots {
-            println!("Provider found: {} -> tokens today: {:?}", snap.display_name, snap.today.as_ref().map(|t| t.total_tokens));
+            println!(
+                "Provider found: {} -> tokens today: {:?}",
+                snap.display_name,
+                snap.today.as_ref().map(|t| t.total_tokens)
+            );
         }
     }
 }

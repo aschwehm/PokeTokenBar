@@ -327,7 +327,9 @@ pub fn conversation_entries(database: &Path) -> ConversationRead {
         .map(DateTime::<Utc>::from);
 
     let mut step_timestamps = HashMap::new();
-    if let Ok(mut step_stmt) = conn.prepare("SELECT idx, metadata FROM steps WHERE metadata IS NOT NULL") {
+    if let Ok(mut step_stmt) =
+        conn.prepare("SELECT idx, metadata FROM steps WHERE metadata IS NOT NULL")
+    {
         if let Ok(mut step_rows) = step_stmt.query([]) {
             while let Ok(Some(row)) = step_rows.next() {
                 let idx: i64 = row.get(0).unwrap_or(0);
@@ -337,7 +339,9 @@ pub fn conversation_entries(database: &Path) -> ConversationRead {
                         let nano = proto::varint(stamp, 2);
                         if let Some(s) = sec {
                             if (1_000_000_000..=4_102_444_800).contains(&s) {
-                                if let Some(dt) = DateTime::from_timestamp(s as i64, nano.unwrap_or(0) as u32) {
+                                if let Some(dt) =
+                                    DateTime::from_timestamp(s as i64, nano.unwrap_or(0) as u32)
+                                {
                                     step_timestamps.insert(idx, dt);
                                 }
                             }
@@ -376,7 +380,12 @@ pub fn conversation_entries(database: &Path) -> ConversationRead {
                 if let Ok(blob) = row.get::<_, Vec<u8>>(1) {
                     if !blob.is_empty() {
                         let fallback = step_timestamps.get(&idx).copied().or(file_mtime);
-                        let record = parse_generation_metadata_with_fallback(&blob, conversation, idx, fallback);
+                        let record = parse_generation_metadata_with_fallback(
+                            &blob,
+                            conversation,
+                            idx,
+                            fallback,
+                        );
                         discarded_counters += record.discarded_counters;
                         if let Some(entry) = record.entry {
                             entries.push(entry);
