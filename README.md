@@ -22,6 +22,33 @@ It monitors the AI coding tokens you burn across 10 tools (Claude Code, Codex, G
 
 ---
 
+## 📸 App Preview & Gallery
+
+<div align="center">
+
+| 🐾 **Active Companion (Buddy)** | 📊 **Usage Analytics & AI Split** |
+| :---: | :---: |
+| <img src="docs/assets/screenshot-buddy.png" width="340" alt="Active Buddy Companion" /> | <img src="docs/assets/screenshot-usage.png" width="340" alt="AI Token Usage & Limits" /> |
+
+| 🎒 **Shop & Bag Economy** | 📖 **Pokédex Collection Grid** |
+| :---: | :---: |
+| <img src="docs/assets/screenshot-shop.png" width="340" alt="PokéShop & Bag Inventory" /> | <img src="docs/assets/screenshot-pokedex.png" width="340" alt="Discovered Pokédex" /> |
+
+| 📜 **Pokédex Lore & Entry Modal** | ⚙️ **Preferences & Customization** |
+| :---: | :---: |
+| <img src="docs/assets/screenshot-pokedex-detail.png" width="340" alt="Pokédex Entry Detail Lore" /> | <img src="docs/assets/screenshot-settings.png" width="340" alt="Settings & Themes" /> |
+
+<br/>
+
+### 🐾 Floating Desktop Pet (Always-on-Top HUD)
+<img src="docs/assets/screenshot-pet.png" width="160" alt="Desktop Pet Companion Widget" />
+
+*Non-intrusive circular HUD with SVG perimeter evolution ring and live pace flame indicators*
+
+</div>
+
+---
+
 ## 🌟 Key Features
 
 ### 🐾 1. Active Buddy & Evolution System
