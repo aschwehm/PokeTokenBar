@@ -1898,10 +1898,8 @@ fn atomic_write(path: &Path, data: &[u8]) -> std::io::Result<()> {
     let tmp = path.with_extension("tmp");
     std::fs::write(&tmp, data)?;
     #[cfg(windows)]
-    {
-        if path.exists() {
-            let _ = std::fs::remove_file(path);
-        }
+    if path.exists() {
+        let _ = std::fs::remove_file(path);
     }
     std::fs::rename(&tmp, path)
 }

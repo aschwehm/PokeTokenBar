@@ -89,26 +89,36 @@ pub fn augmented_environment(
     binary_path: &str,
     mut base: HashMap<String, String>,
 ) -> HashMap<String, String> {
-    let binary_dir = Path::new(binary_path.trim_end_matches('/'))
+    let binary_dir = Path::new(binary_path.trim_end_matches(['/', '\\']))
         .parent()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
     let mut paths = vec![binary_dir];
     paths.extend(common_tool_directories());
-    for entry in base
-        .get("PATH")
-        .map(String::as_str)
-        .unwrap_or("/usr/bin:/bin:/usr/sbin:/sbin")
-        .split(':')
-    {
-        paths.push(entry.to_string());
+
+    #[cfg(target_os = "windows")]
+    let (sep, default_path) = (';', "");
+    #[cfg(not(target_os = "windows"))]
+    let (sep, default_path) = (':', "/usr/bin:/bin:/usr/sbin:/sbin");
+
+    if let Some(existing) = base.get("PATH").map(String::as_str) {
+        for entry in existing.split(sep) {
+            if !entry.is_empty() {
+                paths.push(entry.to_string());
+            }
+        }
+    } else if !default_path.is_empty() {
+        for entry in default_path.split(sep) {
+            paths.push(entry.to_string());
+        }
     }
+
     let mut seen = HashSet::new();
     let merged = paths
         .into_iter()
-        .filter(|p| seen.insert(p.clone()))
+        .filter(|p| !p.is_empty() && seen.insert(p.clone()))
         .collect::<Vec<String>>()
-        .join(":");
+        .join(&sep.to_string());
     base.insert("PATH".to_string(), merged);
     base
 }
@@ -348,12 +358,17 @@ fn shell_marked_output(script: &str, arguments: &[String], label: &str) -> Optio
     }
 }
 
+#[cfg(target_os = "windows")]
+fn shell_path() -> Option<String> {
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
 fn shell_path() -> Option<String> {
     match std::env::var("SHELL") {
         Ok(shell) if is_executable(&shell) => return Some(shell),
         _ => {}
     }
-    #[cfg(not(target_os = "windows"))]
     if is_executable("/bin/bash") {
         return Some("/bin/bash".to_string());
     }
@@ -384,6 +399,7 @@ mod tests {
     static TEST_BIN_SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn augmented_environment_prepends_tool_paths() {
         let home = home_dir().expect("HOME set in test environment");
         let home = home.to_string_lossy();
@@ -415,6 +431,24 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
+    fn augmented_environment_prepends_tool_paths_windows() {
+        let binary = "C:\\Program Files\\Codex\\codex.exe";
+        let base = HashMap::from([
+            ("PATH".to_string(), "C:\\Windows\\System32;C:\\Windows".to_string()),
+            ("LANG".to_string(), "en_US.UTF-8".to_string()),
+        ]);
+        let env = augmented_environment(binary, base);
+        let paths: Vec<&str> = env["PATH"].split(';').collect();
+
+        assert_eq!(paths[0], "C:\\Program Files\\Codex");
+        assert!(paths.contains(&"C:\\Windows\\System32"));
+        assert!(paths.contains(&"C:\\Windows"));
+        assert_eq!(env["LANG"], "en_US.UTF-8");
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
     fn augmented_environment_uses_default_path_when_base_has_none() {
         let env = augmented_environment("/usr/local/bin/codex", HashMap::new());
         let paths: Vec<&str> = env["PATH"].split(':').collect();
@@ -423,6 +457,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn augmented_environment_dedups_preserving_first_occurrence() {
         let base = HashMap::from([(
             "PATH".to_string(),
@@ -440,6 +475,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn common_tool_directories_have_expected_layout() {
         let dirs = common_tool_directories();
         assert!(dirs.contains(&"/usr/local/bin".to_string()));
@@ -467,6 +503,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn common_node_tool_paths_include_manager_dirs() {
         let paths = common_node_tool_paths("ccusage");
         assert!(paths.iter().any(|p| p.ends_with("/.asdf/shims/ccusage")));

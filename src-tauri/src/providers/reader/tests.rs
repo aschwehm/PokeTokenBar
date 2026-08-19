@@ -345,9 +345,10 @@ fn embedded_roots_find_roots_under_work_directory_names() {
         .collect();
     for work in ["outputs", "uploads", "build", "target"] {
         assert!(
-            found.iter().any(
-                |p| p.contains(&format!("/{work}/")) || p.contains(&format!("/{work}/.claude"))
-            ),
+            found.iter().any(|p| {
+                let norm = p.replace('\\', "/");
+                norm.contains(&format!("/{work}/")) || norm.contains(&format!("/{work}/.claude"))
+            }),
             "{work} workdir root was pruned"
         );
     }
@@ -393,12 +394,16 @@ fn normalized_roots_drops_duplicates_and_nested_roots_keeping_order() {
         PathBuf::from("/Users/x/.claude/projects/sub"), // nested
         PathBuf::from("/Users/x/.claude/projects-other"), // prefix only — kept
     ];
+    let actual: Vec<String> = normalized_roots(&roots)
+        .into_iter()
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .collect();
     assert_eq!(
-        normalized_roots(&roots),
+        actual,
         vec![
-            PathBuf::from("/Users/x/.claude/projects"),
-            PathBuf::from("/Users/x/.config/claude/projects"),
-            PathBuf::from("/Users/x/.claude/projects-other"),
+            "/Users/x/.claude/projects".to_string(),
+            "/Users/x/.config/claude/projects".to_string(),
+            "/Users/x/.claude/projects-other".to_string(),
         ]
     );
 }
@@ -415,9 +420,8 @@ fn default_roots_contain_cli_path_and_are_unique() {
 #[test]
 fn default_projects_path_has_single_source() {
     let p = claude_projects_dir(Path::new("/Users/x"));
-    assert!(p
-        .to_string_lossy()
-        .ends_with(&format!("/{}", default_relative_projects_path())));
+    let norm = p.to_string_lossy().replace('\\', "/");
+    assert!(norm.ends_with(&format!("/{}", default_relative_projects_path())));
 }
 
 // MARK: - Codex parsing

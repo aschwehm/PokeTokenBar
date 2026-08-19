@@ -502,6 +502,8 @@ fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
     }
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, data)?;
+    #[cfg(windows)]
+    let _ = std::fs::remove_file(path);
     std::fs::rename(&tmp, path)
 }
 

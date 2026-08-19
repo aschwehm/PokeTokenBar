@@ -24,8 +24,15 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&toggle, &pet, &refresh, &quit])?;
-    let mut builder = TrayIconBuilder::new()
+    let icon = if let Some(icon) = app.default_window_icon() {
+        icon.clone()
+    } else {
+        tauri::include_image!("icons/32x32.png")
+    };
+
+    TrayIconBuilder::new()
         .tooltip("PokeTokenBar")
+        .icon(icon)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -47,13 +54,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             {
                 toggle_window(tray.app_handle());
             }
-        });
-
-    if let Some(icon) = app.default_window_icon() {
-        builder = builder.icon(icon.clone());
-    }
-
-    builder.build(app)?;
+        })
+        .build(app)?;
 
     Ok(())
 }

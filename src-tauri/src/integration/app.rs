@@ -33,14 +33,12 @@ impl StateInner {
     }
 
     fn refresh(&mut self) {
-        self.usage.refresh(&mut self.companion);
-        if let Some(cred) = crate::providers::claude_limits::read_claude_credentials(None) {
-            if !cred.is_expired() {
-                if let Ok(status) = crate::providers::claude_limits::fetch_claude_limits(&cred) {
-                    self.limits = Some(status);
-                }
-            }
-        }
+        let Self {
+            ref mut usage,
+            ref mut companion,
+            ..
+        } = *self;
+        usage.refresh(companion);
     }
 }
 
@@ -320,7 +318,20 @@ pub async fn refresh(
 ) -> Result<Snapshot, String> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let limits = if let Some(cred) = crate::providers::claude_limits::read_claude_credentials(None) {
+            if !cred.is_expired() {
+                crate::providers::claude_limits::fetch_claude_limits(&cred).ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let mut inner = state.lock().map_err(|e| e.to_string())?;
+        if limits.is_some() {
+            inner.limits = limits;
+        }
         let prev_seq = inner.companion.celebration_seq;
         inner.refresh();
         if inner.companion.celebration_seq > prev_seq {
@@ -463,7 +474,25 @@ pub fn toggle_pet_window(app: tauri::AppHandle) -> Result<bool, String> {
             Ok(true)
         }
     } else {
-        Err("Pet window not configured".to_string())
+        let builder = tauri::WebviewWindowBuilder::new(
+            &app,
+            "pet",
+            tauri::WebviewUrl::App("/pet".into()),
+        )
+        .title("Companion Pet")
+        .inner_size(140.0, 140.0)
+        .resizable(false)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible(true);
+
+        #[cfg(target_os = "windows")]
+        let builder = builder.shadow(false);
+
+        let _ = builder.build().map_err(|e| e.to_string())?;
+        Ok(true)
     }
 }
 

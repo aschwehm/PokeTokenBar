@@ -408,9 +408,9 @@ pub fn cursor_default_roots() -> Vec<PathBuf> {
             return vec![PathBuf::from(val)];
         }
     }
-    let home = crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
     #[cfg(target_os = "macos")]
     {
+        let home = crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
         vec![
             home.join("Library/Application Support/Cursor/User/globalStorage"),
             home.join("Library/Application Support/Cursor Nightly/User/globalStorage"),
@@ -426,6 +426,7 @@ pub fn cursor_default_roots() -> Vec<PathBuf> {
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
+        let home = crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
         vec![
             home.join(".config/Cursor/User/globalStorage"),
             home.join(".config/Cursor Nightly/User/globalStorage"),
@@ -718,18 +719,25 @@ pub fn kiro_default_roots() -> Vec<PathBuf> {
             return vec![PathBuf::from(val)];
         }
     }
-    let home = crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
     #[cfg(target_os = "macos")]
     {
+        let home = crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
         vec![home.join("Library/Application Support/kiro-cli")]
     }
     #[cfg(target_os = "windows")]
     {
-        let appdata = std::env::var("APPDATA").unwrap_or_default();
-        vec![PathBuf::from(&appdata).join("kiro-cli")]
+        let mut roots = Vec::new();
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            roots.push(PathBuf::from(local).join("kiro-cli"));
+        }
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            roots.push(PathBuf::from(appdata).join("kiro-cli"));
+        }
+        roots
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
+        let home = crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
         vec![
             home.join(".local/share/kiro-cli"),
             home.join(".config/kiro-cli"),

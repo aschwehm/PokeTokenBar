@@ -339,7 +339,7 @@ pub fn normalized_roots(roots: &[PathBuf]) -> Vec<PathBuf> {
         let p = path.to_lowercase();
         let nested = kept.iter().any(|k| {
             let k = k.to_lowercase();
-            p == k || p.starts_with(&format!("{k}/"))
+            p == k || p.starts_with(&format!("{k}/")) || p.starts_with(&format!("{k}\\"))
         });
         if !nested {
             kept.push(path);
