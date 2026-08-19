@@ -2,7 +2,9 @@
 
 **Your AI coding tokens, hatched into Pokémon — now cross-platform.**
 
-PokeTokenBar is a lightweight, cross-platform desktop application built with **Tauri 2 (Rust + Svelte 5)** that turns the AI-coding tokens you burn (Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI, Copilot CLI, Kiro CLI) into a growing, evolving Pokémon companion.
+This project is a from-scratch cross-platform port of the original macOS menu-bar app [**chattymin/PokeTokenBar**](https://github.com/chattymin/PokeTokenBar) created by [**@chattymin**](https://github.com/chattymin). Re-engineered with **Tauri 2 (Rust backend + Svelte 5 frontend)**, it brings the AI-coding Pokémon companion experience to **Windows** and **Linux**.
+
+It monitors the AI coding tokens you burn across 10 tools (Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI, Copilot CLI, Kiro CLI) and turns them into a growing, evolving Pokémon buddy right on your desktop.
 
 > **Status: v0.3.0 — Complete UI Overhaul & Performance Engine (Linux & Windows).**
 > - **10 Supported AI Providers**: Claude Code, Codex, Gemini CLI, Grok CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Copilot CLI, Kiro CLI.
@@ -89,6 +91,14 @@ npm run tauri build
 Installers will be generated under `src-tauri/target/release/bundle/`:
 - **Windows**: `nsis/PokeTokenBar_0.3.0_x64-setup.exe` and `msi/PokeTokenBar_0.3.0_x64_en-US.msi`
 - **Linux**: `deb/poketokenbar_0.3.0_amd64.deb` and `appimage/poketokenbar_0.3.0_amd64.AppImage`
+
+---
+
+## 🙏 Acknowledgements & Credits
+
+- [**chattymin/PokeTokenBar**](https://github.com/chattymin/PokeTokenBar) by [**@chattymin**](https://github.com/chattymin): The original macOS app that inspired this port. Huge appreciation for the original game design, companion mechanics, and the comprehensive Swift reference test suite.
+- [**PokéAPI**](https://pokeapi.co): Providing the public Pokémon species index, evolutionary chains, and types data.
+- [**Pokémon Showdown**](https://play.pokemonshowdown.com): Animated battle sprites.
 
 ---
 
