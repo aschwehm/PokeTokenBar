@@ -492,6 +492,24 @@ pub fn consume_feedback(state: State<'_, AppState>) -> Result<Snapshot, String> 
 }
 
 #[tauri::command]
+pub fn minimize_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        window.minimize().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn hide_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        window.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn toggle_pet_window(app: tauri::AppHandle) -> Result<bool, String> {
     use tauri::Manager;
     if let Some(window) = app.get_webview_window("pet") {
@@ -507,7 +525,7 @@ pub fn toggle_pet_window(app: tauri::AppHandle) -> Result<bool, String> {
         let builder =
             tauri::WebviewWindowBuilder::new(&app, "pet", tauri::WebviewUrl::App("/pet".into()))
                 .title("Companion Pet")
-                .inner_size(140.0, 140.0)
+                .inner_size(160.0, 160.0)
                 .resizable(false)
                 .decorations(false)
                 .transparent(true)

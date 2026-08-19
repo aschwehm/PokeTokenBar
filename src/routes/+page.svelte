@@ -145,17 +145,25 @@
 
   async function minimizeWindow() {
     try {
-      await getCurrentWindow().minimize();
+      await invoke("minimize_window");
     } catch {
-      // ignore
+      try {
+        await getCurrentWindow().minimize();
+      } catch {
+        // ignore
+      }
     }
   }
 
   async function hideWindow() {
     try {
-      await getCurrentWindow().hide();
+      await invoke("hide_window");
     } catch {
-      // ignore
+      try {
+        await getCurrentWindow().hide();
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -429,6 +437,21 @@
       </div>
 
       <div class="header-actions">
+        <button
+          class="window-btn"
+          onclick={togglePet}
+          title="Toggle Desktop Pet Widget"
+          aria-label="Toggle Desktop Pet"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <ellipse cx="12" cy="16" rx="5.5" ry="4.3"></ellipse>
+            <ellipse cx="5.2" cy="9.5" rx="2.1" ry="2.6" transform="rotate(-15 5.2 9.5)"></ellipse>
+            <ellipse cx="9.6" cy="6.3" rx="2.1" ry="2.7" transform="rotate(-5 9.6 6.3)"></ellipse>
+            <ellipse cx="14.4" cy="6.3" rx="2.1" ry="2.7" transform="rotate(5 14.4 6.3)"></ellipse>
+            <ellipse cx="18.8" cy="9.5" rx="2.1" ry="2.6" transform="rotate(15 18.8 9.5)"></ellipse>
+          </svg>
+        </button>
+
         <button
           class="window-btn"
           class:active-action={showSettings}
