@@ -88,16 +88,12 @@ impl UsageStore {
         self.providers.iter().map(|p| p.id().to_string()).collect()
     }
 
-    /// Fetch daily + enrichment from all providers, aggregate, and drive the
-    /// companion growth loop. Synchronous; call from a background thread.
-    pub fn refresh(&mut self, companion: &mut CompanionStore) {
-        let today_key = reader::today_key();
+    /// Collects provider snapshots from a list of providers (heavy I/O).
+    /// Can run on a background thread without locking any stores.
+    pub fn collect_snapshots(providers: &[Box<dyn UsageProvider>]) -> Vec<ProviderSnapshot> {
         let now = Utc::now();
-
-        // Phase 1: daily (critical path) — a provider contributes a snapshot
-        // only when it actually has today's data.
         let mut new_snapshots: Vec<ProviderSnapshot> = Vec::new();
-        for provider in &self.providers {
+        for provider in providers {
             if let Some(today) = provider.fetch_daily() {
                 let mut snapshot = ProviderSnapshot::new(
                     provider.id().to_string(),
@@ -112,15 +108,9 @@ impl UsageStore {
                 new_snapshots.push(snapshot);
             }
         }
-        self.snapshots = new_snapshots;
-        self.last_updated = Some(now);
-
-        // Phase 2: block/week/month enrichment (best effort — failures keep
-        // the values unset; see the Swift's keep-previous semantics).
-        for provider in &self.providers {
+        for provider in providers {
             let enrichment = provider.fetch_enrichment();
-            if let Some(snapshot) = self
-                .snapshots
+            if let Some(snapshot) = new_snapshots
                 .iter_mut()
                 .find(|s| s.provider_id == provider.id())
             {
@@ -133,6 +123,19 @@ impl UsageStore {
                 }
             }
         }
+        new_snapshots
+    }
+
+    /// Applies collected snapshots to the store and updates the companion (light in-memory update).
+    pub fn apply_snapshots(
+        &mut self,
+        snapshots: Vec<ProviderSnapshot>,
+        companion: &mut CompanionStore,
+    ) {
+        let today_key = reader::today_key();
+        let now = Utc::now();
+        self.snapshots = snapshots;
+        self.last_updated = Some(now);
 
         // Drive the companion.
         let by_provider = self.today_tokens_by_provider();
@@ -147,6 +150,13 @@ impl UsageStore {
             false,
             has_usage_data,
         );
+    }
+
+    /// Fetch daily + enrichment from all providers, aggregate, and drive the
+    /// companion growth loop. Synchronous; call from a background thread.
+    pub fn refresh(&mut self, companion: &mut CompanionStore) {
+        let snapshots = Self::collect_snapshots(&self.providers);
+        self.apply_snapshots(snapshots, companion);
     }
 
     // MARK: derived values

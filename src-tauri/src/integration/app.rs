@@ -32,13 +32,19 @@ impl StateInner {
         }
     }
 
-    fn refresh(&mut self) {
-        let Self {
-            ref mut usage,
-            ref mut companion,
-            ..
-        } = *self;
-        usage.refresh(companion);
+    pub fn create_default_providers() -> Vec<Box<dyn crate::providers::UsageProvider>> {
+        vec![
+            Box::new(crate::providers::local::LocalClaudeProvider),
+            Box::new(crate::providers::local::LocalCodexProvider),
+            Box::new(crate::providers::local::LocalGeminiProvider),
+            Box::new(crate::providers::local::LocalGrokProvider),
+            Box::new(crate::providers::antigravity::LocalAntigravityProvider),
+            Box::new(crate::providers::additional::LocalOpenCodeProvider),
+            Box::new(crate::providers::additional::LocalHermesProvider),
+            Box::new(crate::providers::additional::LocalCursorProvider),
+            Box::new(crate::providers::additional::LocalCopilotProvider),
+            Box::new(crate::providers::additional::LocalKiroProvider),
+        ]
     }
 }
 
@@ -306,9 +312,14 @@ fn build_snapshot(inner: &StateInner) -> Snapshot {
 // MARK: commands
 
 #[tauri::command]
-pub fn snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
-    let inner = state.lock().map_err(|e| e.to_string())?;
-    Ok(build_snapshot(&inner))
+pub async fn snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let inner = state.lock().map_err(|e| e.to_string())?;
+        Ok(build_snapshot(&inner))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -318,6 +329,7 @@ pub async fn refresh(
 ) -> Result<Snapshot, String> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        // 1. Fetch claude limits in background WITHOUT locking state
         let limits =
             if let Some(cred) = crate::providers::claude_limits::read_claude_credentials(None) {
                 if !cred.is_expired() {
@@ -329,43 +341,60 @@ pub async fn refresh(
                 None
             };
 
-        let mut inner = state.lock().map_err(|e| e.to_string())?;
-        if limits.is_some() {
-            inner.limits = limits;
-        }
-        let prev_seq = inner.companion.celebration_seq;
-        inner.refresh();
-        if inner.companion.celebration_seq > prev_seq {
-            if let Some(c) = inner.companion.celebration {
-                let (title, body) = match c {
-                    Celebration::Hatch { shiny } => (
-                        if shiny {
-                            "Shiny Pokémon Hatched! ✨"
-                        } else {
-                            "Pokémon Hatched! 🐣"
-                        },
-                        format!("Your egg hatched into {}!", inner.companion.display_name()),
-                    ),
-                    Celebration::Evolve => (
-                        "Pokémon Evolved! 🌟",
-                        format!(
-                            "Your partner evolved into {}!",
-                            inner.companion.display_name()
-                        ),
-                    ),
-                    Celebration::DittoReveal { shiny } => (
-                        if shiny {
-                            "Shiny Ditto Discovered! ✨"
-                        } else {
-                            "Ditto Discovered! 🟣"
-                        },
-                        "Your Pokémon transformed back into Ditto!".to_string(),
-                    ),
-                };
-                crate::integration::notify::send_notification(&app, title, &body);
+        // 2. Heavy filesystem scan across all providers WITHOUT locking state!
+        let providers = StateInner::create_default_providers();
+        let snapshots = UsageStore::collect_snapshots(&providers);
+
+        // 3. Acquire state lock for < 0.1ms to apply in-memory updates
+        let (snap, celebration_to_notify) = {
+            let mut inner = state.lock().map_err(|e| e.to_string())?;
+            if limits.is_some() {
+                inner.limits = limits;
             }
+            let prev_seq = inner.companion.celebration_seq;
+            let StateInner {
+                ref mut usage,
+                ref mut companion,
+                ..
+            } = *inner;
+            usage.apply_snapshots(snapshots, companion);
+
+            let celebration = if inner.companion.celebration_seq > prev_seq {
+                inner.companion.celebration.map(|c| (c, inner.companion.display_name()))
+            } else {
+                None
+            };
+            (build_snapshot(&inner), celebration)
+        };
+
+        // 4. Send notification outside the lock
+        if let Some((c, name)) = celebration_to_notify {
+            let (title, body) = match c {
+                Celebration::Hatch { shiny } => (
+                    if shiny {
+                        "Shiny Pokémon Hatched! ✨"
+                    } else {
+                        "Pokémon Hatched! 🐣"
+                    },
+                    format!("Your egg hatched into {}!", name),
+                ),
+                Celebration::Evolve => (
+                    "Pokémon Evolved! 🌟",
+                    format!("Your partner evolved into {}!", name),
+                ),
+                Celebration::DittoReveal { shiny } => (
+                    if shiny {
+                        "Shiny Ditto Discovered! ✨"
+                    } else {
+                        "Ditto Discovered! 🟣"
+                    },
+                    "Your Pokémon transformed back into Ditto!".to_string(),
+                ),
+            };
+            crate::integration::notify::send_notification(&app, title, &body);
         }
-        Ok(build_snapshot(&inner))
+
+        Ok(snap)
     })
     .await
     .map_err(|e| e.to_string())?
