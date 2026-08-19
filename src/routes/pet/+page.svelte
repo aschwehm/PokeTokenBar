@@ -63,7 +63,13 @@
     if (spriteCache[key]) return spriteCache[key];
     cacheSprite(id, shiny);
     const dir = shiny ? "shiny/" : "";
-    return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${dir}${id}.png`;
+    return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/${dir}${id}.gif`;
+  }
+
+  function fallbackStaticSprite(e: Event, id: number, shiny: boolean) {
+    const img = e.currentTarget as HTMLImageElement;
+    const dir = shiny ? "shiny/" : "";
+    img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${dir}${id}.png`;
   }
 
   onMount(() => {
@@ -104,6 +110,7 @@
           src={spriteUrl(c.currentSpeciesId, c.isShiny)}
           alt={c.displayName}
           draggable="false"
+          onerror={(e) => fallbackStaticSprite(e, c.currentSpeciesId ?? 1, c.isShiny)}
         />
         <div class="ring-progress">
           <div class="ring-fill" style="width: {(c.progress * 100).toFixed(0)}%"></div>
