@@ -467,7 +467,7 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: #12141a;
+    background: transparent;
     color-scheme: dark;
   }
 
