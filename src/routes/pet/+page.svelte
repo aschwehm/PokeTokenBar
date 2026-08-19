@@ -165,12 +165,15 @@
   }
 
   .sprite {
-    width: 96px;
-    height: 96px;
+    max-width: 92px;
+    max-height: 92px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
     image-rendering: pixelated;
     pointer-events: none;
-    margin-top: -6px;
-    margin-bottom: -10px;
+    margin-top: -4px;
+    margin-bottom: -6px;
     filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
   }
 

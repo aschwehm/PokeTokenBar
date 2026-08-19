@@ -499,7 +499,7 @@
         <div class="about-card">
           <div class="about-title">
             <span>PokeTokenBar</span>
-            <span class="version-tag">v0.2.0</span>
+            <span class="version-tag">v0.2.1</span>
           </div>
           <p class="sub">Cross-platform Pokémon companion for your AI coding tokens on Windows & Linux.</p>
         </div>
@@ -866,8 +866,9 @@
                 {/if}
                 <img
                   class="dex-sprite"
-                  src={spriteUrl(d.id, d.isShiny, false)}
+                  src={spriteUrl(d.id, d.isShiny, true)}
                   alt={d.name}
+                  onerror={(e) => fallbackStaticSprite(e, d.id, d.isShiny)}
                   loading="lazy"
                 />
                 <div class="dex-info">
@@ -1181,12 +1182,17 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-width: 90px;
+    width: 96px;
+    height: 96px;
+    flex-shrink: 0;
   }
 
   .sprite {
-    width: 86px;
-    height: 86px;
+    max-width: 92px;
+    max-height: 92px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
     image-rendering: pixelated;
     filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.5));
   }
@@ -1674,8 +1680,8 @@
 
   .pokedex-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
   }
 
   .dex-card {
@@ -1683,12 +1689,14 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     background: var(--card-bg);
     border: 1px solid var(--card-border);
-    border-radius: 10px;
-    padding: 10px 6px;
+    border-radius: 12px;
+    padding: 12px 8px 10px;
     text-align: center;
-    transition: transform 0.15s ease;
+    min-height: 124px;
+    transition: transform 0.15s ease, border-color 0.15s ease;
   }
   .dex-card:hover {
     transform: translateY(-2px);
@@ -1697,25 +1705,29 @@
 
   .dex-card.active-buddy {
     border-color: var(--accent);
-    box-shadow: 0 0 10px var(--accent-glow);
+    box-shadow: 0 0 12px var(--accent-glow);
   }
 
   .active-badge {
     position: absolute;
-    top: 4px;
-    right: 4px;
+    top: 6px;
+    right: 6px;
     font-size: 8px;
     font-weight: 800;
-    padding: 1px 4px;
+    padding: 2px 5px;
     border-radius: 4px;
     background: var(--accent);
     color: white;
   }
 
   .dex-sprite {
-    width: 56px;
-    height: 56px;
+    max-width: 76px;
+    max-height: 76px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
     image-rendering: pixelated;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
   }
 
   .dex-info {
