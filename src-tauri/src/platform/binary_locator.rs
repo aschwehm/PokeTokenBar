@@ -272,35 +272,60 @@ pub fn home_dir() -> Option<PathBuf> {
 pub fn wsl_home_dirs() -> Vec<PathBuf> {
     #[cfg(target_os = "windows")]
     {
-        let mut dirs = Vec::new();
-        for prefix in [r"\\wsl.localhost", r"\\wsl$"] {
-            let root = Path::new(prefix);
-            if let Ok(entries) = std::fs::read_dir(root) {
-                for entry in entries.flatten() {
-                    let distro_path = entry.path();
-                    if !distro_path.is_dir() {
-                        continue;
-                    }
-                    let distro_name = distro_path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or_default();
-                    if distro_name.starts_with("docker-desktop") {
-                        continue;
-                    }
-                    let home_parent = distro_path.join("home");
-                    if let Ok(user_entries) = std::fs::read_dir(&home_parent) {
-                        for user_entry in user_entries.flatten() {
-                            let user_path = user_entry.path();
-                            if user_path.is_dir() {
-                                dirs.push(user_path);
-                            }
-                        }
+        let mut distros = Vec::new();
+        // Method 1: Query wsl.exe -l -q
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            if let Ok(output) = std::process::Command::new("wsl.exe")
+                .args(["-l", "-q"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+            {
+                let u16_vec: Vec<u16> = output
+                    .stdout
+                    .chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .collect();
+                let text = String::from_utf16_lossy(&u16_vec);
+                for line in text.lines() {
+                    let name = line.trim().trim_matches('\0');
+                    if !name.is_empty() && !name.starts_with("docker-desktop") {
+                        distros.push(name.to_string());
                     }
                 }
             }
-            if !dirs.is_empty() {
-                break;
+        }
+        // Method 2: Common distribution names fallback
+        for candidate in [
+            "Ubuntu",
+            "Ubuntu-24.04",
+            "Ubuntu-22.04",
+            "Ubuntu-20.04",
+            "Debian",
+            "kali-linux",
+            "Arch",
+            "openSUSE",
+        ] {
+            if !distros.iter().any(|d| d.eq_ignore_ascii_case(candidate)) {
+                let p = format!(r"\\wsl.localhost\{}\home", candidate);
+                if Path::new(&p).is_dir() {
+                    distros.push(candidate.to_string());
+                }
+            }
+        }
+
+        let mut dirs = Vec::new();
+        for distro in distros {
+            let home_parent = PathBuf::from(format!(r"\\wsl.localhost\{}\home", distro));
+            if let Ok(user_entries) = std::fs::read_dir(&home_parent) {
+                for user_entry in user_entries.flatten() {
+                    let user_path = user_entry.path();
+                    if user_path.is_dir() {
+                        dirs.push(user_path);
+                    }
+                }
             }
         }
         dirs

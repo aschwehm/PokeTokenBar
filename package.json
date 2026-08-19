@@ -1,6 +1,6 @@
 {
   "name": "poketokenbar",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Pokémon companion for your AI coding tokens — Linux/Windows port of chattymin/PokeTokenBar.",
   "type": "module",
   "scripts": {

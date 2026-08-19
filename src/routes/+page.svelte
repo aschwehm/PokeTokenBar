@@ -138,6 +138,8 @@
   }
 
   let autostartActive = $state(false);
+  let showSettings = $state(false);
+  let refreshIntervalSec = $state(60);
   let spriteCache = $state<Record<string, string>>({});
 
   async function checkAutostart() {
@@ -162,6 +164,15 @@
     }
   }
 
+  function changeRefreshInterval(sec: number) {
+    refreshIntervalSec = sec;
+    try {
+      localStorage.setItem("ptb_refresh_interval", sec.toString());
+    } catch {
+      // ignore
+    }
+  }
+
   async function cacheSprite(id: number, shiny: boolean) {
     const key = `${id}_${shiny}`;
     if (spriteCache[key]) return;
@@ -176,6 +187,18 @@
   }
 
   onMount(() => {
+    try {
+      const saved = localStorage.getItem("ptb_refresh_interval");
+      if (saved) {
+        const sec = parseInt(saved, 10);
+        if (!isNaN(sec) && sec >= 5) {
+          refreshIntervalSec = sec;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     invoke<Snapshot>("snapshot")
       .then((s) => {
         if (!snap) snap = s;
@@ -183,9 +206,11 @@
       .catch(() => {});
     refresh();
     checkAutostart();
-    const interval = setInterval(() => {
+
+    let interval = setInterval(() => {
       refresh();
-    }, 60_000);
+    }, refreshIntervalSec * 1000);
+
     const unlisten = listen("tray-refresh", () => refresh());
     return () => {
       clearInterval(interval);
@@ -214,13 +239,11 @@
   }
 
   function formatUtilization(val: number): string {
-    const pct = val <= 1.0 && val > 0 ? val * 100 : val;
-    return `${pct.toFixed(0)}%`;
+    return `${val.toFixed(0)}%`;
   }
 
   function getUtilizationPercent(val: number): string {
-    const pct = val <= 1.0 && val > 0 ? val * 100 : val;
-    return Math.min(100, Math.max(0, pct)).toFixed(1);
+    return Math.min(100, Math.max(0, val)).toFixed(1);
   }
 
   function spriteUrl(id: number, shiny: boolean): string {
@@ -264,6 +287,14 @@
       <span class="title" data-tauri-drag-region>PokeTokenBar</span>
     </div>
     <div class="header-right">
+      <button
+        class="ghost"
+        class:active-tab={showSettings}
+        onclick={() => (showSettings = !showSettings)}
+        title={showSettings ? "Show Companion" : "Settings"}
+      >
+        ⚙
+      </button>
       <button class="ghost" onclick={togglePet} title="Toggle Floating Desktop Pet">
         🐾
       </button>
@@ -280,7 +311,71 @@
     <p class="error">{error}</p>
   {/if}
 
-  {#if snap}
+  {#if showSettings}
+    <div class="settings-view">
+      <div class="settings-header">
+        <h3>Settings</h3>
+        <button class="ghost back-btn" onclick={() => (showSettings = false)}>← Back</button>
+      </div>
+
+      <div class="settings-group">
+        <h4>General</h4>
+        <div class="settings-row">
+          <div class="setting-info">
+            <span class="setting-title">Launch at Login</span>
+            <span class="setting-desc">Start PokeTokenBar automatically on startup</span>
+          </div>
+          <input
+            type="checkbox"
+            checked={autostartActive}
+            onchange={toggleAutostart}
+            aria-label="Launch at login"
+          />
+        </div>
+
+        <div class="settings-row">
+          <div class="setting-info">
+            <span class="setting-title">Refresh Interval</span>
+            <span class="setting-desc">Background polling frequency for token logs</span>
+          </div>
+          <select
+            class="custom-select"
+            value={refreshIntervalSec}
+            onchange={(e) => changeRefreshInterval(parseInt((e.target as HTMLSelectElement).value, 10))}
+            aria-label="Refresh interval"
+          >
+            <option value={15}>15 seconds</option>
+            <option value={30}>30 seconds</option>
+            <option value={60}>1 minute (default)</option>
+            <option value={120}>2 minutes</option>
+            <option value={300}>5 minutes</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h4>Desktop Companion</h4>
+        <div class="settings-row">
+          <div class="setting-info">
+            <span class="setting-title">Floating Pet</span>
+            <span class="setting-desc">Always-on-top circular Pokémon widget</span>
+          </div>
+          <button class="ghost" onclick={togglePet}>Toggle Pet</button>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h4>About</h4>
+        <div class="about-card">
+          <div class="about-title">
+            <span>PokeTokenBar</span>
+            <span class="version-tag">v0.1.3</span>
+          </div>
+          <p class="sub">Pokémon companion for your AI coding tokens on Windows & Linux.</p>
+        </div>
+      </div>
+    </div>
+  {:else if snap}
     {@const c = snap.companion}
     {@const u = snap.usage}
 
@@ -441,19 +536,6 @@
           {/each}
         </div>
       {/if}
-    </section>
-
-    <section>
-      <h3>Settings</h3>
-      <div class="settings-row">
-        <span>Launch at login</span>
-        <input
-          type="checkbox"
-          checked={autostartActive}
-          onchange={toggleAutostart}
-          aria-label="Launch at login"
-        />
-      </div>
     </section>
   {:else if !loading}
     <p class="sub">Loading…</p>
@@ -776,5 +858,104 @@
     color: #ff5d5d;
     font-size: 12px;
     margin-bottom: 8px;
+  }
+
+  .active-tab {
+    background: #3a4459;
+    border-color: #586684;
+    color: #ffffff;
+  }
+
+  .settings-view {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-bottom: 8px;
+  }
+
+  .settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2px;
+  }
+
+  .settings-header h3 {
+    margin-bottom: 0;
+  }
+
+  .back-btn {
+    font-size: 12px;
+    padding: 3px 8px;
+  }
+
+  .settings-group {
+    background: #1a1e27;
+    border: 1px solid #272d3b;
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+
+  .settings-group h4 {
+    margin: 0 0 8px 0;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #7b8599;
+  }
+
+  .setting-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .setting-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: #e6e6e6;
+  }
+
+  .setting-desc {
+    font-size: 11px;
+    color: #7b8599;
+  }
+
+  .custom-select {
+    background: #252b38;
+    color: #e6e6e6;
+    border: 1px solid #3d4659;
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 12px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .custom-select:focus {
+    border-color: #4f8cff;
+  }
+
+  .about-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .about-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .version-tag {
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: #2b3342;
+    color: #72a7ff;
+    border: 1px solid #3e4b63;
   }
 </style>
