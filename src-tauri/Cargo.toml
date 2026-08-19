@@ -1,6 +1,6 @@
 [package]
 name = "poketokenbar"
-version = "0.2.1"
+version = "0.3.0"
 description = "Pokémon companion for your AI coding tokens — Linux/Windows port of chattymin/PokeTokenBar."
 authors = ["PokeTokenBar contributors"]
 edition = "2021"

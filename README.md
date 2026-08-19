@@ -2,67 +2,95 @@
 
 **Your AI coding tokens, hatched into Pokémon — now cross-platform.**
 
-This is a from-scratch port of [chattymin/PokeTokenBar](https://github.com/chattymin/PokeTokenBar),
-a macOS menu-bar app that turns the AI-coding tokens you burn (Claude Code, Codex, Gemini CLI,
-Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI, Copilot CLI, Kiro CLI) into a growing
-Pokémon companion. The original is written in **Swift 6 + SwiftUI + AppKit**; this port re-implements
-it with **Tauri 2** (Rust core + web frontend) so it runs on **Linux** first and **Windows** after.
+PokeTokenBar is a lightweight, cross-platform desktop application built with **Tauri 2 (Rust + Svelte 5)** that turns the AI-coding tokens you burn (Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI, Copilot CLI, Kiro CLI) into a growing, evolving Pokémon companion.
 
-> **Status: Feature-Complete Port (Linux & Windows).** Full feature parity with the original:
-> all 10 providers (Claude Code, Codex, Gemini, Grok, Antigravity, OpenCode, Hermes, Cursor, Copilot, Kiro),
-> official Claude OAuth rate limits, companion hatching/evolution/graduation, inventory shop,
-> floating draggable desktop pet (`🐾`), autostart on login, offline sprite caching, and desktop notifications.
-> 333 unit tests pass. See [docs/roadmap.md](docs/roadmap.md) and [handoff.md](handoff.md).
+> **Status: v0.3.0 — Complete UI Overhaul & Performance Engine (Linux & Windows).**
+> - **10 Supported AI Providers**: Claude Code, Codex, Gemini CLI, Grok CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Copilot CLI, Kiro CLI.
+> - **Redesigned Interface**: Space Grotesk & JetBrains Mono typography, dark aesthetic cards, radial type glows, stage pips, and segmented AI usage breakdown.
+> - **Desktop Companion Pet Widget**: Floating, always-on-top circular HUD with an SVG perimeter evolution progress ring and real-time pace flame badges.
+> - **Zero-Freeze Async Engine**: Provider log scans decoupled from UI state locks (< 0.01 ms mutex duration).
+> - **333 passing unit tests**. See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md).
 
-## Why a port (and why Tauri)
+---
 
-The original's value splits roughly 60/40:
+## 🌟 Key Features
 
-- **~60–70% is pure, cross-platform logic** — the token parsers (JSONL / SQLite / protobuf),
-  aggregation & burn-rate forecasting, model pricing, the companion state machine, save/transfer,
-  localization, and the PokéAPI client. This ports almost directly.
-- **~30–40% is macOS-only** — the SwiftUI views, `NSStatusBar`/`NSPopover`, the floating desktop pet
-  (`NSPanel`/`NSEvent`), `NSImage`/GIF decoding, Keychain, launch-at-login, single-instance, crash
-  reporting, and notifications.
+### 🐾 1. Active Buddy & Evolution System
+- **Egg Incubation to Final Mastery**: Burn AI tokens while coding to incubate eggs, hatch new Pokémon partners, and evolve them through multiple evolutionary stages.
+- **Stage Pips & Type Badges**: Live stage tracker (`● ● ○`) and dynamic color themes matching Pokémon elemental types (Grass, Fire, Water, Electric, Ice, Ground, Psychic, Dragon, etc.).
+- **Quick Action Items**: Use **Nature Mints** to reroll growth attributes or **Rare Candies** for instant progress directly from the Buddy card.
+- **Celebration Banners**: Interactive banners with sparkle animations celebrating evolutionary milestones and Hall of Fame graduations.
 
-Swift has **no viable menu-bar/tray UI story on Linux or Windows** (SwiftUI does not exist off
-macOS), so the UI layer is rewritten regardless. Tauri was chosen so that the *logic* lives in
-**Rust** (small, fast, well-tested, ideal for a 24/7 tray app) and the *UI* lives in a **web
-frontend** (ideal for animated sprites and a rich popover), with first-class system-tray,
-notification, and transparent-window support on all three platforms.
+### 📊 2. Usage Analytics & Claude Rate Limits
+- **Aggregated Summaries**: Real-time token consumption metrics for **Today**, **This Week**, and **This Month**, plus estimated cost in USD.
+- **Active AI Tools Breakdown**: Proportional horizontal tool share bar and detailed per-provider breakdown lists.
+- **Claude OAuth Rate Limit Tracking**: Direct integration with `~/.claude/.credentials.json` to monitor 5-hour session windows and 7-day weekly rate limits.
 
-The original's extensive Swift test suite is used as the **executable specification** for the Rust
-logic — we re-implement against verified behavior, not guesses.
+### 🎒 3. Shop & Bag Economy
+- **Wallet Balance**: Tokens earned by coding become available currency to spend in the PokéShop.
+- **Bag Inventory**: Store Nature Mints, Rare Candies, Shiny Charms, and Pokémon Eggs.
+- **PokéShop**: Purchase Basic, Uncommon+, and Rare+ eggs, Mints, and Charms with interactive purchase animations and balance protection.
 
-See [docs/architecture.md](docs/architecture.md) for the full design and the Swift→Rust module
-mapping.
+### 📖 4. Pokédex & Mystery Discovery
+- **Collection Tracker**: Browse all discovered Pokémon with primary type banners, active buddy tags, and animated Showdown GIFs.
+- **Silhouette Progression**: Mystery locked slots (`?` / `???`) indicate remaining species to discover.
 
-## One important platform difference
+### 🐾 5. Desktop Companion Pet (Floating Widget)
+- **Always-on-Top Floating Sphere**: Transparent, frameless circular pet widget draggable anywhere on your desktop.
+- **Circular Perimeter Progress Ring**: Non-intrusive SVG ring progress indicator wrapping the circumference, leaving the center 100% unobstructed for your Pokémon.
+- **Pace Flame Badge**: Dynamically displays pace indicators (⚡ Fast Pace, 🔥 On Fire) based on your real-time token burn tier.
 
-The original shows an **animated sprite + live token count in the macOS menu bar**. Neither the
-Linux tray (`StatusNotifierItem` / AppIndicator) nor the Windows tray (`Shell_NotifyIcon`) supports
-arbitrary animation or text — only a static icon + tooltip. On these platforms:
+### 🎨 6. Theme Engine & Customization
+- **4 Visual Themes**: *Midnight Glass*, *OLED Dark*, *Neon Cyber*, and *Game Boy Retro*.
+- **Configurable Polling**: Adjust background token refresh frequency (10s, 30s, 60s, 120s, 300s).
+- **Launch at Login**: Native autostart support on Windows (Registry) and Linux (XDG Autostart).
+- **Animated Sprites Toggle**: Choose between animated Pokémon Showdown GIFs or static pixel art sprites.
 
-- **System tray** = static icon; clicking it opens the popover window.
-- **Floating pet** (desktop widget) = where the animated sprite + live count live. This is already a
-  first-class feature in the original and ports cleanly.
+---
 
-## AI Vibe-Coding Disclaimer
+## ⚡ Performance & Architecture
 
-> [!WARNING]
-> This port was **completely vibe-coded** using **DeepSeek V4 Pro** and **Gemini 3.7 Flash**.
-> While backed by 333 passing unit tests ported from the original Swift reference test suite, **use at your own risk**!
+- **Rust Backend**: Fast, lightweight background daemon leveraging Tokio async runtime and Rusqlite.
+- **Non-Blocking State Architecture**: Filesystem and WSL log scans run asynchronously in background tasks without holding the global application lock, ensuring the UI and floating pet never stall or freeze.
+- **Disk Caching**: 30-day disk cache for the PokéAPI GraphQL species index and local sprite cache in `%LOCALAPPDATA%\poketokenbar\sprites` (Windows) or `~/.local/share/poketokenbar/sprites` (Linux) with zero external network requests during standard coding sessions.
 
-## License & disclaimer
+---
 
-This project is an **unofficial, non-commercial fan project**. It is not affiliated with,
-endorsed, sponsored, or approved by Nintendo, Game Freak, Creatures Inc., or The Pokémon Company.
-"Pokémon" and all related names, characters, and imagery are trademarks and copyrights of their
-respective owners.
+## 📦 Building & Installation
 
-As with the original, **no Pokémon assets are committed or bundled** — species data and sprites are
-fetched at runtime from the public [PokéAPI](https://pokeapi.co) and cached locally on the user's
-device. The MIT license covers this project's original source code only; it grants no rights to any
-third-party trademarks, artwork, or data.
+### Prerequisites
+- [Node.js](https://nodejs.org) (v18+)
+- [Rust](https://rustup.rs) (1.78+)
+- Platform build dependencies (Visual Studio C++ Build Tools on Windows, `libwebkit2gtk-4.1-dev` on Linux)
 
-The port is MIT-licensed. See [LICENSE](LICENSE).
+### Development
+```bash
+# Install frontend dependencies
+npm install
+
+# Run in development mode (hot reload)
+npm run tauri dev
+```
+
+### Production Build
+```bash
+# Run TypeScript / Svelte checks
+npm run check
+
+# Build release binaries & installers
+npm run tauri build
+```
+Installers will be generated under `src-tauri/target/release/bundle/`:
+- **Windows**: `nsis/PokeTokenBar_0.3.0_x64-setup.exe` and `msi/PokeTokenBar_0.3.0_x64_en-US.msi`
+- **Linux**: `deb/poketokenbar_0.3.0_amd64.deb` and `appimage/poketokenbar_0.3.0_amd64.AppImage`
+
+---
+
+## 📜 License & Disclaimer
+
+This project is an **unofficial, non-commercial fan project**. It is not affiliated with, endorsed, sponsored, or approved by Nintendo, Game Freak, Creatures Inc., or The Pokémon Company. "Pokémon" and all related names, characters, and imagery are trademarks and copyrights of their respective owners.
+
+No Pokémon assets are committed or bundled — species data and sprites are fetched at runtime from public APIs and cached locally.
+
+The software is open source under the [MIT License](LICENSE).
+

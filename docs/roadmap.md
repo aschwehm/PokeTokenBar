@@ -56,6 +56,18 @@ hatch → evolve → graduate) working end-to-end, then widen.
 - [x] Cross-platform tray, notifications, autostart, window draggable regions.
 - [x] Packaging: Windows NSIS / MSI bundle targets configured in `tauri.conf.json` and `.github/workflows/ci.yml`.
 
+## Phase 6 — Claude Design UI Overhaul & Performance Polish (v0.3.0) [DONE]
+
+- [x] Complete frontend overhaul matching the Claude Design specifications.
+- [x] Space Grotesk & JetBrains Mono typography with custom dark aesthetic palettes.
+- [x] Hero buddy card with stage pips, elemental type styling, and dual-tone gradient progress bars.
+- [x] Active AI Tools horizontal distribution bar with proportional per-provider breakdowns.
+- [x] PokéShop purchase shake animations (`pk-shake`) on insufficient token balance.
+- [x] Pokédex 2-column grid with animated Showdown GIFs and mystery discovery progression slots.
+- [x] Redesigned desktop pet with an SVG circular perimeter progress ring and unclipped glow.
+- [x] Decoupled heavy provider I/O scanning from global state locks (<0.01ms state lock, zero UI freezes).
+- [x] Added window minimize & hide backend commands and header pet toggle shortcut.
+
 ---
 
 ## Cross-cutting principles (from the original's own rules)

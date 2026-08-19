@@ -570,7 +570,7 @@ mod tests {
     #[test]
     fn test_state_inner_refresh() {
         let mut state = StateInner::new();
-        state.refresh();
+        state.usage.refresh(&mut state.companion);
         for snap in &state.usage.snapshots {
             println!(
                 "Provider found: {} -> tokens today: {:?}",
