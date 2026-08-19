@@ -30,6 +30,21 @@ pub fn default_root() -> PathBuf {
         .join(".gemini/antigravity-cli/conversations")
 }
 
+/// All root directories for Antigravity, including discovered WSL directories on Windows.
+pub fn all_roots() -> Vec<PathBuf> {
+    let mut roots = vec![default_root()];
+    #[cfg(target_os = "windows")]
+    {
+        for wsl_home in crate::platform::binary_locator::wsl_home_dirs() {
+            let wsl_root = wsl_home.join(".gemini/antigravity-cli/conversations");
+            if wsl_root.is_dir() {
+                roots.push(wsl_root);
+            }
+        }
+    }
+    roots
+}
+
 // MARK: - Protobuf wire format parser
 
 pub mod proto {
@@ -351,8 +366,9 @@ fn open_read_only(database: &Path) -> Option<Connection> {
     }
     // Try mode=ro URI first, then immutable=1 URI
     let path_str = database.to_str()?;
+    let normalized = path_str.replace('\\', "/");
     for params in ["mode=ro", "immutable=1"] {
-        let uri = format!("file:{}?{}", path_str, params);
+        let uri = format!("file:{}?{}", normalized, params);
         let flags = OpenFlags::SQLITE_OPEN_READ_ONLY
             | OpenFlags::SQLITE_OPEN_URI
             | OpenFlags::SQLITE_OPEN_NO_MUTEX;
@@ -364,6 +380,16 @@ fn open_read_only(database: &Path) -> Option<Connection> {
             {
                 return Some(conn);
             }
+        }
+    }
+    // Direct open fallback if URI mode fails
+    let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+    if let Ok(conn) = Connection::open_with_flags(database, flags) {
+        if conn
+            .query_row("SELECT count(*) FROM sqlite_master", [], |_| Ok(()))
+            .is_ok()
+        {
+            return Some(conn);
         }
     }
     None
@@ -582,9 +608,16 @@ impl LocalAntigravityUsageCache {
 
     pub fn entries(&mut self, now: DateTime<Utc>) -> Vec<Entry> {
         let since = reader::enrichment_scan_start(now.with_timezone(&Local)).with_timezone(&Utc);
-        let root = self.root.clone().unwrap_or_else(default_root);
-        let scan_result = scan(&root, since, &self.blobs);
-        self.blobs = scan_result.blobs;
+        let roots = match &self.root {
+            Some(r) => vec![r.clone()],
+            None => all_roots(),
+        };
+        let mut all_blobs = self.blobs.clone();
+        for root in roots {
+            let scan_result = scan(&root, since, &all_blobs);
+            all_blobs.extend(scan_result.blobs);
+        }
+        self.blobs = all_blobs;
         assemble(&self.blobs, since)
     }
 }

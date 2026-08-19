@@ -44,8 +44,9 @@ fn open_ro(database: &Path) -> Option<Connection> {
         return None;
     }
     let path_str = database.to_str()?;
+    let normalized = path_str.replace('\\', "/");
     for params in ["mode=ro", "immutable=1"] {
-        let uri = format!("file:{}?{}", path_str, params);
+        let uri = format!("file:{}?{}", normalized, params);
         let flags = OpenFlags::SQLITE_OPEN_READ_ONLY
             | OpenFlags::SQLITE_OPEN_URI
             | OpenFlags::SQLITE_OPEN_NO_MUTEX;
@@ -56,6 +57,16 @@ fn open_ro(database: &Path) -> Option<Connection> {
             {
                 return Some(conn);
             }
+        }
+    }
+    // Direct open fallback if URI mode fails
+    let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+    if let Ok(conn) = Connection::open_with_flags(database, flags) {
+        if conn
+            .query_row("SELECT count(*) FROM sqlite_master", [], |_| Ok(()))
+            .is_ok()
+        {
+            return Some(conn);
         }
     }
     None
@@ -95,7 +106,21 @@ pub fn opencode_default_roots() -> Vec<PathBuf> {
         }
     }
     let home = crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    vec![home.join(".local/share/opencode")]
+    let mut roots = vec![home.join(".local/share/opencode")];
+    #[cfg(target_os = "windows")]
+    {
+        for wsl_home in crate::platform::binary_locator::wsl_home_dirs() {
+            let wsl_opencode = wsl_home.join(".local/share/opencode");
+            if wsl_opencode.is_dir() {
+                roots.push(wsl_opencode);
+            }
+            let wsl_opencode_root = wsl_home.join(".opencode");
+            if wsl_opencode_root.is_dir() {
+                roots.push(wsl_opencode_root);
+            }
+        }
+    }
+    roots
 }
 
 pub fn opencode_entries(modified_since: DateTime<Utc>, roots: Option<Vec<PathBuf>>) -> Vec<Entry> {
@@ -572,7 +597,17 @@ pub fn copilot_default_roots() -> Vec<PathBuf> {
         }
     }
     let home = crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    vec![home.join(".copilot")]
+    let mut roots = vec![home.join(".copilot")];
+    #[cfg(target_os = "windows")]
+    {
+        for wsl_home in crate::platform::binary_locator::wsl_home_dirs() {
+            let wsl_copilot = wsl_home.join(".copilot");
+            if wsl_copilot.is_dir() {
+                roots.push(wsl_copilot);
+            }
+        }
+    }
+    roots
 }
 
 pub fn copilot_entries(modified_since: DateTime<Utc>, roots: Option<Vec<PathBuf>>) -> Vec<Entry> {
@@ -732,6 +767,16 @@ pub fn kiro_default_roots() -> Vec<PathBuf> {
         }
         if let Ok(appdata) = std::env::var("APPDATA") {
             roots.push(PathBuf::from(appdata).join("kiro-cli"));
+        }
+        for wsl_home in crate::platform::binary_locator::wsl_home_dirs() {
+            let wsl_kiro = wsl_home.join(".local/share/kiro-cli");
+            if wsl_kiro.is_dir() {
+                roots.push(wsl_kiro);
+            }
+            let wsl_kiro_cfg = wsl_home.join(".config/kiro-cli");
+            if wsl_kiro_cfg.is_dir() {
+                roots.push(wsl_kiro_cfg);
+            }
         }
         roots
     }

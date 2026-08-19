@@ -197,6 +197,20 @@ pub fn compute_claude_project_roots(config_dir_value: Option<&str>, home: &Path)
     roots.push(home.join(config_relative_projects_path()));
     roots.push(home.join(default_relative_projects_path()));
 
+    #[cfg(target_os = "windows")]
+    {
+        for wsl_home in crate::platform::binary_locator::wsl_home_dirs() {
+            let wsl_claude = wsl_home.join(".claude/projects");
+            if wsl_claude.is_dir() {
+                roots.push(wsl_claude);
+            }
+            let wsl_config_claude = wsl_home.join(".config/claude/projects");
+            if wsl_config_claude.is_dir() {
+                roots.push(wsl_config_claude);
+            }
+        }
+    }
+
     let desktop = home.join("Library/Application Support/Claude");
     for store in ["local-agent-mode-sessions", "claude-code-sessions"] {
         roots.extend(embedded_claude_project_roots(&desktop.join(store), 7));

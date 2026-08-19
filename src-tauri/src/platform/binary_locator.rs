@@ -267,6 +267,50 @@ pub fn home_dir() -> Option<PathBuf> {
     }
 }
 
+/// Returns all discovered WSL home directories on Windows (e.g. `\\wsl.localhost\Ubuntu\home\username`).
+/// On non-Windows platforms, returns an empty vector.
+pub fn wsl_home_dirs() -> Vec<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut dirs = Vec::new();
+        for prefix in [r"\\wsl.localhost", r"\\wsl$"] {
+            let root = Path::new(prefix);
+            if let Ok(entries) = std::fs::read_dir(root) {
+                for entry in entries.flatten() {
+                    let distro_path = entry.path();
+                    if !distro_path.is_dir() {
+                        continue;
+                    }
+                    let distro_name = distro_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or_default();
+                    if distro_name.starts_with("docker-desktop") {
+                        continue;
+                    }
+                    let home_parent = distro_path.join("home");
+                    if let Ok(user_entries) = std::fs::read_dir(&home_parent) {
+                        for user_entry in user_entries.flatten() {
+                            let user_path = user_entry.path();
+                            if user_path.is_dir() {
+                                dirs.push(user_path);
+                            }
+                        }
+                    }
+                }
+            }
+            if !dirs.is_empty() {
+                break;
+            }
+        }
+        dirs
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Vec::new()
+    }
+}
+
 fn locate(binary: &str, static_paths: &[String]) -> Option<String> {
     // On macOS a user-supplied override ("<binary>Path" in UserDefaults) is
     // checked before the static paths; there is no cross-platform equivalent yet.

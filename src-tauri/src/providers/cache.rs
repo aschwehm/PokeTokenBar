@@ -219,13 +219,31 @@ impl LocalUsageCache {
 
     pub fn codex_entries(&mut self, modified_since: DateTime<Utc>) -> Vec<reader::Entry> {
         self.ensure_loaded();
-        let home = reader::home_dir().unwrap_or_default();
-        let root = match &self.codex_root {
-            Some(root) => root.clone(),
-            None => reader::codex_sessions_dir(&home),
+        let roots = match &self.codex_root {
+            Some(root) => vec![root.clone()],
+            None => {
+                let home = reader::home_dir().unwrap_or_default();
+                let mut list = vec![reader::codex_sessions_dir(&home)];
+                #[cfg(target_os = "windows")]
+                {
+                    for wsl_home in crate::platform::binary_locator::wsl_home_dirs() {
+                        let wsl_codex = reader::codex_sessions_dir(&wsl_home);
+                        if wsl_codex.is_dir() {
+                            list.push(wsl_codex);
+                        }
+                    }
+                }
+                list
+            }
         };
-        let (rollouts, included_paths) = self.collect_codex_rollouts(&root, modified_since);
-        let entries = reader::resolve_codex_rollouts(rollouts, included_paths);
+        let mut all_rollouts = Vec::new();
+        let mut all_paths = std::collections::HashSet::new();
+        for root in roots {
+            let (rollouts, included_paths) = self.collect_codex_rollouts(&root, modified_since);
+            all_rollouts.extend(rollouts);
+            all_paths.extend(included_paths);
+        }
+        let entries = reader::resolve_codex_rollouts(all_rollouts, all_paths);
         self.save_if_needed();
         entries
     }
@@ -239,22 +257,38 @@ impl LocalUsageCache {
 
     pub fn gemini_entries(&mut self, modified_since: DateTime<Utc>) -> Vec<reader::Entry> {
         self.ensure_loaded();
-        let home = reader::home_dir().unwrap_or_default();
-        let root = match &self.gemini_root {
-            Some(root) => root.clone(),
-            None => reader::gemini_tmp_dir(&home),
+        let roots = match &self.gemini_root {
+            Some(root) => vec![root.clone()],
+            None => {
+                let home = reader::home_dir().unwrap_or_default();
+                let mut list = vec![reader::gemini_tmp_dir(&home)];
+                #[cfg(target_os = "windows")]
+                {
+                    for wsl_home in crate::platform::binary_locator::wsl_home_dirs() {
+                        let wsl_tmp = reader::gemini_tmp_dir(&wsl_home);
+                        if wsl_tmp.is_dir() {
+                            list.push(wsl_tmp);
+                        }
+                    }
+                }
+                list
+            }
         };
-        let entries = collect(
-            &root,
-            modified_since,
-            &mut self.gemini_cache,
-            &self.dirty,
-            true,
-            None,
-            |f| reader::parse_gemini_file(f, LOCAL_DAY_FORMAT),
-        );
+        let mut all_entries = Vec::new();
+        for root in roots {
+            let entries = collect(
+                &root,
+                modified_since,
+                &mut self.gemini_cache,
+                &self.dirty,
+                true,
+                None,
+                |f| reader::parse_gemini_file(f, LOCAL_DAY_FORMAT),
+            );
+            all_entries.extend(entries);
+        }
         self.save_if_needed();
-        entries
+        reader::dedup_keep_max(all_entries)
     }
 
     pub fn grok_entries(&mut self, modified_since: DateTime<Utc>) -> Vec<reader::Entry> {
