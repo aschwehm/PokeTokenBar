@@ -102,6 +102,19 @@ Installers will be generated under `src-tauri/target/release/bundle/`:
 
 ---
 
+## ⚡ AI Vibe-Coding Disclaimer
+
+> [!WARNING]
+> **100% Vibe-Coded Project**:
+> This entire cross-platform port, architecture, Rust backend, Svelte 5 frontend, and UI design was **completely vibe-coded** using:
+> - **Gemini 3.7 Flash** (AGY / Antigravity)
+> - **DeepSeek V4 Pro**
+> - **Claude Design (Sonnet 5)**
+>
+> While backed by **333 passing unit tests** ported from the original Swift reference test suite with zero errors, **use at your own risk!** Bugs may be encountered, and contributions/PRs are always welcome.
+
+---
+
 ## 📜 License & Disclaimer
 
 This project is an **unofficial, non-commercial fan project**. It is not affiliated with, endorsed, sponsored, or approved by Nintendo, Game Freak, Creatures Inc., or The Pokémon Company. "Pokémon" and all related names, characters, and imagery are trademarks and copyrights of their respective owners.
