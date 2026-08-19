@@ -94,9 +94,10 @@
   let autostartActive = $state(false);
   let celebrationDismissed = $state(false);
 
-  let spriteCache = $state<Record<string, string>>({});
-
+  let isRefreshing = false;
   async function refresh() {
+    if (isRefreshing) return;
+    isRefreshing = true;
     loading = true;
     error = null;
     try {
@@ -105,6 +106,7 @@
       error = String(e);
     } finally {
       loading = false;
+      isRefreshing = false;
     }
   }
 
@@ -199,19 +201,6 @@
     }
   }
 
-  async function cacheSprite(id: number, shiny: boolean) {
-    const key = `${id}_${shiny}`;
-    if (spriteCache[key]) return;
-    try {
-      const data = await invoke<string | null>("get_sprite", { id, shiny });
-      if (data) {
-        spriteCache[key] = data;
-      }
-    } catch {
-      // ignore
-    }
-  }
-
   onMount(() => {
     try {
       const savedInterval = localStorage.getItem("ptb_refresh_interval");
@@ -280,9 +269,6 @@
   }
 
   function spriteUrl(id: number, shiny: boolean, animated = true): string {
-    const key = `${id}_${shiny}`;
-    if (spriteCache[key]) return spriteCache[key];
-    cacheSprite(id, shiny);
     const dir = shiny ? "shiny/" : "";
     if (animated && animatedSprites) {
       return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/${dir}${id}.gif`;

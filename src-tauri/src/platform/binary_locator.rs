@@ -267,11 +267,23 @@ pub fn home_dir() -> Option<PathBuf> {
     }
 }
 
+#[cfg(target_os = "windows")]
+static WSL_HOMES_CACHE: std::sync::Mutex<Option<(std::time::Instant, Vec<PathBuf>)>> =
+    std::sync::Mutex::new(None);
+
 /// Returns all discovered WSL home directories on Windows (e.g. `\\wsl.localhost\Ubuntu\home\username`).
 /// On non-Windows platforms, returns an empty vector.
 pub fn wsl_home_dirs() -> Vec<PathBuf> {
     #[cfg(target_os = "windows")]
     {
+        if let Ok(guard) = WSL_HOMES_CACHE.lock() {
+            if let Some((cached_at, ref dirs)) = *guard {
+                if cached_at.elapsed() < std::time::Duration::from_secs(300) {
+                    return dirs.clone();
+                }
+            }
+        }
+
         let mut distros = Vec::new();
         // Method 1: Query wsl.exe -l -q
         #[cfg(target_os = "windows")]
@@ -328,6 +340,11 @@ pub fn wsl_home_dirs() -> Vec<PathBuf> {
                 }
             }
         }
+
+        if let Ok(mut guard) = WSL_HOMES_CACHE.lock() {
+            *guard = Some((std::time::Instant::now(), dirs.clone()));
+        }
+
         dirs
     }
     #[cfg(not(target_os = "windows"))]

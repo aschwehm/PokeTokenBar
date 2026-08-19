@@ -121,14 +121,25 @@ pub fn format_plan_display(sub_type: Option<&str>, tier: Option<&str>) -> Option
     Some(capitalized)
 }
 
+static LIMITS_CACHE: std::sync::Mutex<Option<(std::time::Instant, LimitStatus)>> =
+    std::sync::Mutex::new(None);
+
 pub fn fetch_claude_limits(credential: &OAuthCredential) -> Result<LimitStatus, String> {
+    if let Ok(guard) = LIMITS_CACHE.lock() {
+        if let Some((cached_at, ref status)) = *guard {
+            if cached_at.elapsed() < std::time::Duration::from_secs(60) {
+                return Ok(status.clone());
+            }
+        }
+    }
+
     let resp = ureq::get("https://api.anthropic.com/api/oauth/usage")
         .set(
             "Authorization",
             &format!("Bearer {}", credential.access_token),
         )
         .set("anthropic-beta", "oauth-2025-04-20")
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(3))
         .call()
         .map_err(|e| format!("HTTP request error: {e}"))?;
 
@@ -157,13 +168,19 @@ pub fn fetch_claude_limits(credential: &OAuthCredential) -> Result<LimitStatus, 
         credential.rate_limit_tier.as_deref(),
     );
 
-    Ok(LimitStatus {
+    let status = LimitStatus {
         five_hour,
         seven_day,
         subscription_type: credential.subscription_type.clone(),
         rate_limit_tier: credential.rate_limit_tier.clone(),
         plan_display,
-    })
+    };
+
+    if let Ok(mut guard) = LIMITS_CACHE.lock() {
+        *guard = Some((std::time::Instant::now(), status.clone()));
+    }
+
+    Ok(status)
 }
 
 #[cfg(test)]

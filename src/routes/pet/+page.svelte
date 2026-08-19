@@ -25,20 +25,6 @@
   }
 
   let snap = $state<Snapshot | null>(null);
-  let spriteCache = $state<Record<string, string>>({});
-
-  async function cacheSprite(id: number, shiny: boolean) {
-    const key = `${id}_${shiny}`;
-    if (spriteCache[key]) return;
-    try {
-      const data = await invoke<string | null>("get_sprite", { id, shiny });
-      if (data) {
-        spriteCache[key] = data;
-      }
-    } catch {
-      // ignore
-    }
-  }
 
   async function refresh() {
     try {
@@ -59,9 +45,6 @@
   }
 
   function spriteUrl(id: number, shiny: boolean): string {
-    const key = `${id}_${shiny}`;
-    if (spriteCache[key]) return spriteCache[key];
-    cacheSprite(id, shiny);
     const dir = shiny ? "shiny/" : "";
     return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/${dir}${id}.gif`;
   }
