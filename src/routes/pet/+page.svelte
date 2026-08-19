@@ -120,11 +120,12 @@
 </div>
 
 <style>
-  :global(body) {
+  :global(html, body) {
     margin: 0;
     padding: 0;
     overflow: hidden;
     background: transparent !important;
+    background-color: transparent !important;
     user-select: none;
   }
 

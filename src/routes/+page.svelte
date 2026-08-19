@@ -176,6 +176,11 @@
   }
 
   onMount(() => {
+    invoke<Snapshot>("snapshot")
+      .then((s) => {
+        if (!snap) snap = s;
+      })
+      .catch(() => {});
     refresh();
     checkAutostart();
     const interval = setInterval(() => {
@@ -446,9 +451,14 @@
 </div>
 
 <style>
-  :global(:root) {
+  :global(html, body) {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #12141a;
     color-scheme: dark;
-    background: transparent;
   }
 
   * {
@@ -463,7 +473,27 @@
     padding: 12px 14px;
     height: 100vh;
     overflow-y: auto;
+    overflow-x: hidden;
     user-select: none;
+    scrollbar-width: thin;
+    scrollbar-color: #2c3240 transparent;
+  }
+
+  .app::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .app::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .app::-webkit-scrollbar-thumb {
+    background: #2c3240;
+    border-radius: 3px;
+  }
+
+  .app::-webkit-scrollbar-thumb:hover {
+    background: #3d4659;
   }
 
   header {
