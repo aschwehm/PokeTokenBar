@@ -74,6 +74,18 @@
     limits?: LimitStatus | null;
   }
 
+  interface PokedexDetails {
+    id: number;
+    name: string;
+    genus: string;
+    flavorText: string;
+    heightM: number;
+    weightKg: number;
+    captureRate: number;
+    isLegendary: boolean;
+    isMythical: boolean;
+  }
+
   interface Snapshot {
     companion: CompanionView;
     usage: UsageView;
@@ -94,6 +106,36 @@
   let autostartActive = $state(false);
   let celebrationDismissed = $state(false);
   let shakeItemId = $state<string | null>(null);
+
+  let selectedDexMon = $state<{
+    id: number;
+    name: string;
+    isShiny: boolean;
+    isRaising?: boolean;
+  } | null>(null);
+  let dexDetails = $state<PokedexDetails | null>(null);
+  let dexDetailsLoading = $state(false);
+
+  async function openDexDetails(mon: { id: number; name: string; isShiny: boolean; isRaising?: boolean }) {
+    selectedDexMon = mon;
+    dexDetails = null;
+    dexDetailsLoading = true;
+    try {
+      const res = await invoke<PokedexDetails | null>("get_pokedex_details", {
+        id: mon.id,
+        lang: "en",
+      });
+      if (selectedDexMon?.id === mon.id) {
+        dexDetails = res;
+      }
+    } catch {
+      // fallback handled gracefully
+    } finally {
+      if (selectedDexMon?.id === mon.id) {
+        dexDetailsLoading = false;
+      }
+    }
+  }
 
   let isRefreshing = false;
   async function refresh() {
@@ -629,7 +671,7 @@
           <div class="about-box">
             <div class="about-header">
               <span>PokéTokenBar</span>
-              <span class="version-tag">v0.3.0</span>
+              <span class="version-tag">v0.3.1</span>
             </div>
             <p class="about-sub">Pokémon companion for AI coding tokens on Windows & Linux.</p>
           </div>
@@ -996,7 +1038,12 @@
             <div class="pokedex-2col-grid">
               {#each c.dex as d (d.id)}
                 {@const typeInfo = getTypes(d.id)}
-                <div class="pokedex-card">
+                <button
+                  class="pokedex-card clickable-card"
+                  onclick={() => openDexDetails(d)}
+                  type="button"
+                  title="Click to view Pokédex entry for {d.name}"
+                >
                   <div class="card-top-stripe" style="background: {typeInfo.primary.text};"></div>
                   {#if d.isRaising}
                     <span class="active-tag">ACTIVE</span>
@@ -1021,7 +1068,10 @@
                       </span>
                     {/each}
                   </div>
-                </div>
+                  <div class="dex-view-hint">
+                    <span>View Entry ➔</span>
+                  </div>
+                </button>
               {/each}
               {#each Array(Math.max(4, 8 - c.dex.length)) as _, i}
                 <div class="locked-slot-card">
@@ -1042,6 +1092,91 @@
         </div>
       {/if}
     </main>
+
+    <!-- Pokédex Entry Detail Modal Dialog -->
+    {#if selectedDexMon}
+      {@const mon = selectedDexMon}
+      {@const typeInfo = getTypes(mon.id)}
+      <div
+        class="dex-modal-backdrop"
+        onclick={() => (selectedDexMon = null)}
+        onkeydown={(e) => e.key === "Escape" && (selectedDexMon = null)}
+        role="dialog"
+        tabindex="-1"
+        aria-modal="true"
+      >
+        <div class="dex-modal-card" onclick={(e) => e.stopPropagation()} role="document">
+          <button class="dex-modal-close" onclick={() => (selectedDexMon = null)} aria-label="Close Pokédex entry">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+
+          <div class="dex-modal-hero">
+            <div class="dex-modal-glow" style="background: radial-gradient(circle, {typeInfo.primary.text}40 0%, transparent 70%);"></div>
+            <img
+              class="dex-modal-sprite"
+              src={spriteUrl(mon.id, mon.isShiny, true)}
+              alt={mon.name}
+              onerror={(e) => fallbackStaticSprite(e, mon.id, mon.isShiny)}
+            />
+            {#if mon.isShiny}
+              <span class="dex-modal-shiny-pill">✨ Shiny</span>
+            {/if}
+          </div>
+
+          <div class="dex-modal-header">
+            <div class="dex-modal-id">#{String(mon.id).padStart(3, "0")}</div>
+            <div class="dex-modal-name">
+              {dexDetails?.name ?? mon.name}
+            </div>
+            <div class="dex-modal-genus">
+              {dexDetails?.genus ?? (typeInfo.primary.name + " Pokémon")}
+            </div>
+            <div class="dex-modal-types">
+              {#each typeInfo.list as t}
+                <span class="dex-type-pill" style="background: {t.bg}; border: {t.border}; color: {t.text};">
+                  {t.name}
+                </span>
+              {/each}
+            </div>
+          </div>
+
+          <div class="dex-modal-body">
+            {#if dexDetailsLoading}
+              <div class="dex-modal-loading">
+                <div class="loading-spinner"></div>
+                <span class="loading-dex-text">Consulting Pokédex…</span>
+              </div>
+            {:else if dexDetails}
+              <div class="dex-flavor-card">
+                <div class="dex-flavor-quote">“</div>
+                <p class="dex-flavor-text">{dexDetails.flavorText}</p>
+              </div>
+
+              <div class="dex-stats-grid">
+                <div class="dex-stat-item">
+                  <span class="dex-stat-label">HEIGHT</span>
+                  <span class="dex-stat-value">{dexDetails.heightM > 0 ? dexDetails.heightM.toFixed(1) + " m" : "--"}</span>
+                </div>
+                <div class="dex-stat-item">
+                  <span class="dex-stat-label">WEIGHT</span>
+                  <span class="dex-stat-value">{dexDetails.weightKg > 0 ? dexDetails.weightKg.toFixed(1) + " kg" : "--"}</span>
+                </div>
+                <div class="dex-stat-item">
+                  <span class="dex-stat-label">CATEGORY</span>
+                  <span class="dex-stat-value">{dexDetails.isLegendary ? "Legendary" : dexDetails.isMythical ? "Mythical" : "Standard"}</span>
+                </div>
+              </div>
+            {:else}
+              <div class="dex-flavor-card">
+                <div class="dex-flavor-quote">“</div>
+                <p class="dex-flavor-text">A loyal Pokémon companion raised with your AI coding tokens.</p>
+              </div>
+            {/if}
+          </div>
+        </div>
+      </div>
+    {/if}
+
     <div class="bottom-vignette"></div>
   </div>
 </div>
@@ -1920,6 +2055,259 @@
     border-radius: 999px;
     font-size: 9px;
     font-weight: 700;
+  }
+
+  .clickable-card {
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    outline: none;
+    font-family: inherit;
+  }
+  .clickable-card:hover {
+    transform: translateY(-2px);
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  }
+  .clickable-card:active {
+    transform: translateY(0);
+  }
+  .dex-view-hint {
+    margin-top: 2px;
+    font-size: 9.5px;
+    font-weight: 600;
+    color: #5B6274;
+    transition: color 0.15s ease;
+  }
+  .clickable-card:hover .dex-view-hint {
+    color: #FF8178;
+  }
+
+  /* Pokédex Entry Detail Modal */
+  .dex-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: rgba(4, 6, 10, 0.78);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    animation: fadeIn 0.2s ease;
+  }
+
+  .dex-modal-card {
+    position: relative;
+    width: 100%;
+    max-width: 340px;
+    background: linear-gradient(180deg, #181C26 0%, #0E1017 100%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+    padding: 20px 18px 18px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8), 0 0 30px rgba(227, 55, 45, 0.12);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    animation: modalPop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes modalPop {
+    from {
+      opacity: 0;
+      transform: scale(0.92) translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  .dex-modal-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #8B93A7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, transform 0.15s;
+  }
+  .dex-modal-close:hover {
+    background: rgba(227, 55, 45, 0.2);
+    color: #ffffff;
+    border-color: rgba(227, 55, 45, 0.5);
+    transform: rotate(90deg);
+  }
+
+  .dex-modal-hero {
+    position: relative;
+    width: 100px;
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 4px;
+  }
+
+  .dex-modal-glow {
+    position: absolute;
+    inset: -14px;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  .dex-modal-sprite {
+    max-width: 90px;
+    max-height: 90px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    image-rendering: pixelated;
+    filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.6));
+    z-index: 1;
+  }
+
+  .dex-modal-shiny-pill {
+    position: absolute;
+    bottom: -6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #E8B84B, #FF8A59);
+    color: #111319;
+    font-size: 9.5px;
+    font-weight: 800;
+    box-shadow: 0 2px 8px rgba(232, 184, 75, 0.4);
+    z-index: 2;
+  }
+
+  .dex-modal-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    text-align: center;
+    width: 100%;
+  }
+
+  .dex-modal-id {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: #8B93A7;
+    letter-spacing: 0.06em;
+  }
+
+  .dex-modal-name {
+    font-size: 18px;
+    font-weight: 800;
+    color: #F2F3F5;
+    letter-spacing: -0.01em;
+  }
+
+  .dex-modal-genus {
+    font-size: 11px;
+    font-weight: 600;
+    color: #8B93A7;
+  }
+
+  .dex-modal-types {
+    display: flex;
+    gap: 5px;
+    margin-top: 4px;
+  }
+
+  .dex-modal-body {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .dex-flavor-card {
+    position: relative;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 12px;
+    padding: 12px 14px;
+    min-height: 64px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .dex-flavor-quote {
+    position: absolute;
+    top: 4px;
+    left: 8px;
+    font-size: 24px;
+    line-height: 1;
+    color: rgba(255, 255, 255, 0.08);
+    font-family: Georgia, serif;
+    pointer-events: none;
+  }
+
+  .dex-flavor-text {
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: #C8CDD8;
+    text-align: center;
+    font-style: italic;
+  }
+
+  .dex-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+  }
+
+  .dex-stat-item {
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 7px 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    text-align: center;
+  }
+
+  .dex-stat-label {
+    font-size: 8.5px;
+    font-weight: 700;
+    color: #5B6274;
+    letter-spacing: 0.05em;
+  }
+
+  .dex-stat-value {
+    font-size: 11.5px;
+    font-weight: 700;
+    font-family: "JetBrains Mono", monospace;
+    color: #F2F3F5;
+  }
+
+  .dex-modal-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 0;
+    gap: 8px;
+  }
+
+  .loading-dex-text {
+    font-size: 11px;
+    color: #5B6274;
   }
 
   .locked-slot-card {

@@ -553,6 +553,19 @@ pub async fn get_sprite(id: i64, shiny: bool) -> Result<Option<String>, String> 
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+pub async fn get_pokedex_details(
+    id: i64,
+    lang: Option<String>,
+) -> Result<Option<crate::providers::pokeapi::PokedexDetails>, String> {
+    let language = lang.unwrap_or_else(|| "en".to_string());
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(crate::providers::pokeapi::get_or_fetch_pokedex_details(id, &language))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 fn parse_item_kind(s: &str) -> Option<ItemKind> {
     match s {
         "rareCandy" => Some(ItemKind::RareCandy),

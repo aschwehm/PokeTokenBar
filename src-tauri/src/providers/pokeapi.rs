@@ -83,7 +83,31 @@ pub trait PokeProvider: Send + Sync {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub struct FlavorTextEntryDTO {
+    pub flavor_text: String,
+    pub language: NamedRef,
+    pub version: Option<NamedRef>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct GenusDTO {
+    pub genus: String,
+    pub language: NamedRef,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct PokemonDetailDTO {
+    pub height: Option<f64>,
+    pub weight: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct SpeciesDTO {
+    #[serde(default)]
+    pub id: i64,
     pub capture_rate: i64,
     pub is_legendary: bool,
     pub is_mythical: bool,
@@ -92,6 +116,10 @@ pub struct SpeciesDTO {
     pub evolution_chain: URLRef,
     /// `None` = evolution-line start (base).
     pub evolves_from_species: Option<NamedRef>,
+    #[serde(default)]
+    pub flavor_text_entries: Vec<FlavorTextEntryDTO>,
+    #[serde(default)]
+    pub genera: Vec<GenusDTO>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -539,6 +567,127 @@ pub fn get_or_fetch_sprite(id: i64, shiny: bool) -> Option<String> {
     }
 
     None
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PokedexDetails {
+    pub id: i64,
+    pub name: String,
+    pub genus: String,
+    pub flavor_text: String,
+    pub height_m: f64,
+    pub weight_kg: f64,
+    pub capture_rate: i64,
+    pub is_legendary: bool,
+    pub is_mythical: bool,
+}
+
+pub fn pokedex_cache_path(id: i64) -> PathBuf {
+    let dir = platform::data_dir().join("pokedex");
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join(format!("{id}.json"))
+}
+
+pub fn get_or_fetch_pokedex_details(id: i64, lang: &str) -> Option<PokedexDetails> {
+    if id <= 0 {
+        return None;
+    }
+    let p = pokedex_cache_path(id);
+    if let Ok(content) = std::fs::read_to_string(&p) {
+        if let Ok(details) = serde_json::from_str::<PokedexDetails>(&content) {
+            return Some(details);
+        }
+    }
+
+    // Fetch species detail from PokeAPI
+    let species_url = format!("https://pokeapi.co/api/v2/pokemon-species/{id}");
+    let resp = ureq::get(&species_url).timeout(Duration::from_secs(8)).call().ok()?;
+    let dto: SpeciesDTO = resp.into_json().ok()?;
+
+    // Find name in requested lang, fallback to English or default
+    let name = dto
+        .names
+        .iter()
+        .find(|n| n.language.name == lang)
+        .map(|n| n.name.clone())
+        .unwrap_or_else(|| {
+            dto.names
+                .iter()
+                .find(|n| n.language.name == "en")
+                .map(|n| n.name.clone())
+                .unwrap_or_else(|| format!("Pokemon #{id}"))
+        });
+
+    // Find genus in requested lang, fallback to English or default
+    let genus = dto
+        .genera
+        .iter()
+        .find(|g| g.language.name == lang)
+        .map(|g| g.genus.clone())
+        .unwrap_or_else(|| {
+            dto.genera
+                .iter()
+                .find(|g| g.language.name == "en")
+                .map(|g| g.genus.clone())
+                .unwrap_or_else(|| "Pokémon".to_string())
+        });
+
+    // Find flavor text in requested lang, fallback to English
+    let raw_flavor = dto
+        .flavor_text_entries
+        .iter()
+        .filter(|f| f.language.name == lang)
+        .last()
+        .map(|f| f.flavor_text.clone())
+        .or_else(|| {
+            dto.flavor_text_entries
+                .iter()
+                .filter(|f| f.language.name == "en")
+                .last()
+                .map(|f| f.flavor_text.clone())
+        })
+        .unwrap_or_else(|| "A loyal Pokémon companion raised with AI coding tokens.".to_string());
+
+    let clean_flavor = raw_flavor
+        .replace('\n', " ")
+        .replace('\x0C', " ")
+        .replace('\r', " ")
+        .split_whitespace()
+        .collect::<Vec<&str>>()
+        .join(" ");
+
+    // Fetch height and weight from pokemon/{id}
+    let pokemon_url = format!("https://pokeapi.co/api/v2/pokemon/{id}");
+    let (height_m, weight_kg) = if let Ok(r) = ureq::get(&pokemon_url).timeout(Duration::from_secs(8)).call() {
+        if let Ok(p_dto) = r.into_json::<PokemonDetailDTO>() {
+            let h = p_dto.height.unwrap_or(0.0) / 10.0;
+            let w = p_dto.weight.unwrap_or(0.0) / 10.0;
+            (h, w)
+        } else {
+            (0.0, 0.0)
+        }
+    } else {
+        (0.0, 0.0)
+    };
+
+    let details = PokedexDetails {
+        id,
+        name,
+        genus,
+        flavor_text: clean_flavor,
+        height_m,
+        weight_kg,
+        capture_rate: dto.capture_rate,
+        is_legendary: dto.is_legendary,
+        is_mythical: dto.is_mythical,
+    };
+
+    if let Ok(json) = serde_json::to_string_pretty(&details) {
+        let _ = std::fs::write(&p, json);
+    }
+
+    Some(details)
 }
 
 #[cfg(test)]

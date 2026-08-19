@@ -6,8 +6,9 @@ This project is a from-scratch cross-platform port of the original macOS menu-ba
 
 It monitors the AI coding tokens you burn across 10 tools (Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI, Copilot CLI, Kiro CLI) and turns them into a growing, evolving Pokémon buddy right on your desktop.
 
-> **Status: v0.3.0 — Complete UI Overhaul & Performance Engine (Linux & Windows).**
+> **Status: v0.3.1 — Pokédex Flavor Entries, UI Overhaul & Performance Engine (Linux & Windows).**
 > - **10 Supported AI Providers**: Claude Code, Codex, Gemini CLI, Grok CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Copilot CLI, Kiro CLI.
+> - **Interactive Pokédex Detail Modal**: Click any discovered Pokémon to read its official game Pokédex flavor text, classification, height, weight, and rarity.
 > - **Redesigned Interface**: Space Grotesk & JetBrains Mono typography, dark aesthetic cards, radial type glows, stage pips, and segmented AI usage breakdown.
 > - **Desktop Companion Pet Widget**: Floating, always-on-top circular HUD with an SVG perimeter evolution progress ring and real-time pace flame badges.
 > - **Zero-Freeze Async Engine**: Provider log scans decoupled from UI state locks (< 0.01 ms mutex duration).
@@ -39,8 +40,13 @@ It monitors the AI coding tokens you burn across 10 tools (Claude Code, Codex, G
 - **Bag Inventory**: Store Nature Mints, Rare Candies, Shiny Charms, and Pokémon Eggs.
 - **PokéShop**: Purchase Basic, Uncommon+, and Rare+ eggs, Mints, and Charms with interactive purchase animations and balance protection.
 
-### 📖 4. Pokédex & Mystery Discovery
+### 📖 4. Pokédex & Detailed Entry Dialog
 - **Collection Tracker**: Browse all discovered Pokémon with primary type banners, active buddy tags, and animated Showdown GIFs.
+- **Interactive Detail Modal**: Click on any discovered Pokémon to view its full Pokédex profile:
+  - Official game description / lore flavor text.
+  - Genus classification title (e.g. *Pig Pokémon*, *Seed Pokémon*).
+  - Physical stats (Height in meters, Weight in kilograms).
+  - Category (Standard, Legendary, Mythical).
 - **Silhouette Progression**: Mystery locked slots (`?` / `???`) indicate remaining species to discover.
 
 ### 🐾 5. Desktop Companion Pet (Floating Widget)

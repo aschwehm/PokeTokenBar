@@ -57,6 +57,7 @@ pub fn run() {
             integration::app::minimize_window,
             integration::app::hide_window,
             integration::app::get_sprite,
+            integration::app::get_pokedex_details,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

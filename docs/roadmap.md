@@ -68,6 +68,13 @@ hatch → evolve → graduate) working end-to-end, then widen.
 - [x] Decoupled heavy provider I/O scanning from global state locks (<0.01ms state lock, zero UI freezes).
 - [x] Added window minimize & hide backend commands and header pet toggle shortcut.
 
+## Phase 7 — Pokédex Entry Lore & Offline Cache (v0.3.1) [DONE]
+
+- [x] Implemented `get_pokedex_details` backend endpoint fetching flavor text, genus, height, and weight.
+- [x] Created offline disk caching for Pokédex entries under `pokedex/{id}.json`.
+- [x] Built interactive glassmorphic Pokédex Detail Modal dialog with animated sprite hero, flavor quote, and physical stats.
+- [x] Made Pokédex collection cards interactive with hover lift and view hints.
+
 ---
 
 ## Cross-cutting principles (from the original's own rules)
