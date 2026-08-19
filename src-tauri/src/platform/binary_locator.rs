@@ -479,7 +479,10 @@ mod tests {
     fn augmented_environment_prepends_tool_paths_windows() {
         let binary = "C:\\Program Files\\Codex\\codex.exe";
         let base = HashMap::from([
-            ("PATH".to_string(), "C:\\Windows\\System32;C:\\Windows".to_string()),
+            (
+                "PATH".to_string(),
+                "C:\\Windows\\System32;C:\\Windows".to_string(),
+            ),
             ("LANG".to_string(), "en_US.UTF-8".to_string()),
         ]);
         let env = augmented_environment(binary, base);

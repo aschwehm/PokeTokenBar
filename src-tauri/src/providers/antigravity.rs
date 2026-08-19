@@ -32,6 +32,7 @@ pub fn default_root() -> PathBuf {
 
 /// All root directories for Antigravity, including discovered WSL directories on Windows.
 pub fn all_roots() -> Vec<PathBuf> {
+    #[allow(unused_mut)]
     let mut roots = vec![default_root()];
     #[cfg(target_os = "windows")]
     {

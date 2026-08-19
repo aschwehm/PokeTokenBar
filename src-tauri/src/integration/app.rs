@@ -318,15 +318,16 @@ pub async fn refresh(
 ) -> Result<Snapshot, String> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let limits = if let Some(cred) = crate::providers::claude_limits::read_claude_credentials(None) {
-            if !cred.is_expired() {
-                crate::providers::claude_limits::fetch_claude_limits(&cred).ok()
+        let limits =
+            if let Some(cred) = crate::providers::claude_limits::read_claude_credentials(None) {
+                if !cred.is_expired() {
+                    crate::providers::claude_limits::fetch_claude_limits(&cred).ok()
+                } else {
+                    None
+                }
             } else {
                 None
-            }
-        } else {
-            None
-        };
+            };
 
         let mut inner = state.lock().map_err(|e| e.to_string())?;
         if limits.is_some() {
@@ -474,19 +475,16 @@ pub fn toggle_pet_window(app: tauri::AppHandle) -> Result<bool, String> {
             Ok(true)
         }
     } else {
-        let builder = tauri::WebviewWindowBuilder::new(
-            &app,
-            "pet",
-            tauri::WebviewUrl::App("/pet".into()),
-        )
-        .title("Companion Pet")
-        .inner_size(140.0, 140.0)
-        .resizable(false)
-        .decorations(false)
-        .transparent(true)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .visible(true);
+        let builder =
+            tauri::WebviewWindowBuilder::new(&app, "pet", tauri::WebviewUrl::App("/pet".into()))
+                .title("Companion Pet")
+                .inner_size(140.0, 140.0)
+                .resizable(false)
+                .decorations(false)
+                .transparent(true)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .visible(true);
 
         #[cfg(target_os = "windows")]
         let builder = builder.shadow(false);

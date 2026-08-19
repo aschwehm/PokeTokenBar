@@ -223,6 +223,7 @@ impl LocalUsageCache {
             Some(root) => vec![root.clone()],
             None => {
                 let home = reader::home_dir().unwrap_or_default();
+                #[allow(unused_mut)]
                 let mut list = vec![reader::codex_sessions_dir(&home)];
                 #[cfg(target_os = "windows")]
                 {
@@ -261,6 +262,7 @@ impl LocalUsageCache {
             Some(root) => vec![root.clone()],
             None => {
                 let home = reader::home_dir().unwrap_or_default();
+                #[allow(unused_mut)]
                 let mut list = vec![reader::gemini_tmp_dir(&home)];
                 #[cfg(target_os = "windows")]
                 {

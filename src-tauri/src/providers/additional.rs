@@ -106,6 +106,7 @@ pub fn opencode_default_roots() -> Vec<PathBuf> {
         }
     }
     let home = crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    #[allow(unused_mut)]
     let mut roots = vec![home.join(".local/share/opencode")];
     #[cfg(target_os = "windows")]
     {
@@ -435,7 +436,8 @@ pub fn cursor_default_roots() -> Vec<PathBuf> {
     }
     #[cfg(target_os = "macos")]
     {
-        let home = crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let home =
+            crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
         vec![
             home.join("Library/Application Support/Cursor/User/globalStorage"),
             home.join("Library/Application Support/Cursor Nightly/User/globalStorage"),
@@ -451,7 +453,8 @@ pub fn cursor_default_roots() -> Vec<PathBuf> {
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        let home = crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let home =
+            crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
         vec![
             home.join(".config/Cursor/User/globalStorage"),
             home.join(".config/Cursor Nightly/User/globalStorage"),
@@ -597,6 +600,7 @@ pub fn copilot_default_roots() -> Vec<PathBuf> {
         }
     }
     let home = crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    #[allow(unused_mut)]
     let mut roots = vec![home.join(".copilot")];
     #[cfg(target_os = "windows")]
     {
@@ -756,7 +760,8 @@ pub fn kiro_default_roots() -> Vec<PathBuf> {
     }
     #[cfg(target_os = "macos")]
     {
-        let home = crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let home =
+            crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
         vec![home.join("Library/Application Support/kiro-cli")]
     }
     #[cfg(target_os = "windows")]
@@ -782,7 +787,8 @@ pub fn kiro_default_roots() -> Vec<PathBuf> {
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        let home = crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let home =
+            crate::platform::binary_locator::home_dir().unwrap_or_else(|| PathBuf::from("."));
         vec![
             home.join(".local/share/kiro-cli"),
             home.join(".config/kiro-cli"),
