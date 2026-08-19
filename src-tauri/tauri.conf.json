@@ -15,7 +15,7 @@
         "label": "main",
         "title": "PokeTokenBar",
         "width": 400,
-        "height": 620,
+        "height": 640,
         "resizable": true,
         "decorations": false,
         "shadow": true,

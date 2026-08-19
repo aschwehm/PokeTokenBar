@@ -79,20 +79,21 @@
     usage: UsageView;
   }
 
-  type Tab = "companion" | "stats" | "shop" | "pokedex";
+  type Tab = "buddy" | "usage" | "shop" | "pokedex";
   type Theme = "midnight" | "oled" | "cyberpunk" | "retro";
 
   let snap = $state<Snapshot | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);
 
-  let currentTab = $state<Tab>("companion");
+  let currentTab = $state<Tab>("buddy");
   let showSettings = $state(false);
   let currentTheme = $state<Theme>("midnight");
   let animatedSprites = $state(true);
   let refreshIntervalSec = $state(60);
   let autostartActive = $state(false);
   let celebrationDismissed = $state(false);
+  let shakeItemId = $state<string | null>(null);
 
   let isRefreshing = false;
   async function refresh() {
@@ -110,8 +111,28 @@
     }
   }
 
-  async function buy(kind: string) {
+  async function buy(kind: string, price: number, canBuy: boolean) {
+    if (!canBuy || (snap && snap.companion.availableTokens < price)) {
+      triggerShake(kind);
+      return;
+    }
     snap = await invoke<Snapshot>("buy_item", { kind });
+  }
+
+  async function buyEgg(tier: string | null, price: number, canBuy: boolean) {
+    const key = `egg_${tier ?? "basic"}`;
+    if (!canBuy || (snap && snap.companion.availableTokens < price)) {
+      triggerShake(key);
+      return;
+    }
+    snap = await invoke<Snapshot>("buy_egg", { tier });
+  }
+
+  function triggerShake(id: string) {
+    shakeItemId = id;
+    setTimeout(() => {
+      if (shakeItemId === id) shakeItemId = null;
+    }, 400);
   }
 
   async function useCandy() {
@@ -122,8 +143,12 @@
     snap = await invoke<Snapshot>("use_mint");
   }
 
-  async function buyEgg(tier: string | null) {
-    snap = await invoke<Snapshot>("buy_egg", { tier });
+  async function minimizeWindow() {
+    try {
+      await getCurrentWindow().minimize();
+    } catch {
+      // ignore
+    }
   }
 
   async function hideWindow() {
@@ -143,11 +168,11 @@
   }
 
   async function startDrag(e: MouseEvent) {
-    if (e.button === 0 && !(e.target as HTMLElement).closest("button, select, input, .tab-btn")) {
+    if (e.button === 0 && !(e.target as HTMLElement).closest("button, select, input, .tab-btn, .window-btn")) {
       try {
         await getCurrentWindow().startDragging();
-      } catch (err) {
-        console.error("Failed to start dragging:", err);
+      } catch {
+        // ignore
       }
     }
   }
@@ -156,7 +181,7 @@
     try {
       autostartActive = await isEnabled();
     } catch {
-      // ignore
+      autostartActive = false;
     }
   }
 
@@ -169,24 +194,24 @@
         await enable();
         autostartActive = true;
       }
-    } catch (e) {
-      console.error("Autostart toggle failed:", e);
+    } catch {
+      // ignore
     }
   }
 
   function changeRefreshInterval(sec: number) {
     refreshIntervalSec = sec;
     try {
-      localStorage.setItem("ptb_refresh_interval", sec.toString());
+      localStorage.setItem("ptb_refresh_interval", String(sec));
     } catch {
       // ignore
     }
   }
 
-  function changeTheme(theme: Theme) {
-    currentTheme = theme;
+  function setTheme(t: Theme) {
+    currentTheme = t;
     try {
-      localStorage.setItem("ptb_theme", theme);
+      localStorage.setItem("ptb_theme", t);
     } catch {
       // ignore
     }
@@ -257,7 +282,7 @@
   }
 
   function tokens(n: number): string {
-    return n.toLocaleString("en-US");
+    return Math.round(n).toLocaleString("en-US");
   }
 
   function formatUtilization(val: number): string {
@@ -282,28 +307,73 @@
     img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${dir}${id}.png`;
   }
 
-  // Type mappings for common species IDs
-  function getPokemonType(id: number): { name: string; color: string; icon: string } {
-    const typeMap: Record<number, { name: string; color: string; icon: string }> = {
-      1: { name: "Grass", color: "#78C850", icon: "🌿" },
-      2: { name: "Grass", color: "#78C850", icon: "🌿" },
-      3: { name: "Grass", color: "#78C850", icon: "🌿" },
-      4: { name: "Fire", color: "#F08030", icon: "🔥" },
-      5: { name: "Fire", color: "#F08030", icon: "🔥" },
-      6: { name: "Fire", color: "#F08030", icon: "🔥" },
-      7: { name: "Water", color: "#6890F0", icon: "💧" },
-      8: { name: "Water", color: "#6890F0", icon: "💧" },
-      9: { name: "Water", color: "#6890F0", icon: "💧" },
-      25: { name: "Electric", color: "#F8D030", icon: "⚡" },
-      26: { name: "Electric", color: "#F8D030", icon: "⚡" },
-      133: { name: "Normal", color: "#A8A878", icon: "⚪" },
-      134: { name: "Water", color: "#6890F0", icon: "💧" },
-      135: { name: "Electric", color: "#F8D030", icon: "⚡" },
-      136: { name: "Fire", color: "#F08030", icon: "🔥" },
-      150: { name: "Psychic", color: "#F85888", icon: "🔮" },
-      151: { name: "Psychic", color: "#F85888", icon: "🔮" },
+  interface TypeInfo {
+    name: string;
+    text: string;
+    bg: string;
+    border: string;
+  }
+
+  const POKEMON_TYPES: Record<number, { primary: TypeInfo; secondary?: TypeInfo }> = {
+    1: { primary: { name: "Grass", text: "#78C850", bg: "rgba(120,200,80,0.14)", border: "1px solid rgba(120,200,80,0.35)" }, secondary: { name: "Poison", text: "#A040A0", bg: "rgba(160,64,160,0.14)", border: "1px solid rgba(160,64,160,0.35)" } },
+    2: { primary: { name: "Grass", text: "#78C850", bg: "rgba(120,200,80,0.14)", border: "1px solid rgba(120,200,80,0.35)" }, secondary: { name: "Poison", text: "#A040A0", bg: "rgba(160,64,160,0.14)", border: "1px solid rgba(160,64,160,0.35)" } },
+    3: { primary: { name: "Grass", text: "#78C850", bg: "rgba(120,200,80,0.14)", border: "1px solid rgba(120,200,80,0.35)" }, secondary: { name: "Poison", text: "#A040A0", bg: "rgba(160,64,160,0.14)", border: "1px solid rgba(160,64,160,0.35)" } },
+    4: { primary: { name: "Fire", text: "#F08030", bg: "rgba(240,128,48,0.14)", border: "1px solid rgba(240,128,48,0.35)" } },
+    5: { primary: { name: "Fire", text: "#F08030", bg: "rgba(240,128,48,0.14)", border: "1px solid rgba(240,128,48,0.35)" } },
+    6: { primary: { name: "Fire", text: "#F08030", bg: "rgba(240,128,48,0.14)", border: "1px solid rgba(240,128,48,0.35)" }, secondary: { name: "Flying", text: "#A890F0", bg: "rgba(168,144,240,0.14)", border: "1px solid rgba(168,144,240,0.35)" } },
+    7: { primary: { name: "Water", text: "#6890F0", bg: "rgba(104,144,240,0.14)", border: "1px solid rgba(104,144,240,0.35)" } },
+    8: { primary: { name: "Water", text: "#6890F0", bg: "rgba(104,144,240,0.14)", border: "1px solid rgba(104,144,240,0.35)" } },
+    9: { primary: { name: "Water", text: "#6890F0", bg: "rgba(104,144,240,0.14)", border: "1px solid rgba(104,144,240,0.35)" } },
+    25: { primary: { name: "Electric", text: "#F8D030", bg: "rgba(248,208,48,0.14)", border: "1px solid rgba(248,208,48,0.35)" } },
+    26: { primary: { name: "Electric", text: "#F8D030", bg: "rgba(248,208,48,0.14)", border: "1px solid rgba(248,208,48,0.35)" } },
+    133: { primary: { name: "Normal", text: "#A8A878", bg: "rgba(168,168,120,0.14)", border: "1px solid rgba(168,168,120,0.35)" } },
+    134: { primary: { name: "Water", text: "#6890F0", bg: "rgba(104,144,240,0.14)", border: "1px solid rgba(104,144,240,0.35)" } },
+    135: { primary: { name: "Electric", text: "#F8D030", bg: "rgba(248,208,48,0.14)", border: "1px solid rgba(248,208,48,0.35)" } },
+    136: { primary: { name: "Fire", text: "#F08030", bg: "rgba(240,128,48,0.14)", border: "1px solid rgba(240,128,48,0.35)" } },
+    150: { primary: { name: "Psychic", text: "#F85888", bg: "rgba(248,88,136,0.14)", border: "1px solid rgba(248,88,136,0.35)" } },
+    151: { primary: { name: "Psychic", text: "#F85888", bg: "rgba(248,88,136,0.14)", border: "1px solid rgba(248,88,136,0.35)" } },
+    220: { primary: { name: "Ice", text: "#8FE0EC", bg: "rgba(143,224,236,0.14)", border: "1px solid rgba(143,224,236,0.35)" }, secondary: { name: "Ground", text: "#D9B57B", bg: "rgba(217,181,123,0.14)", border: "1px solid rgba(217,181,123,0.35)" } },
+    221: { primary: { name: "Ice", text: "#8FE0EC", bg: "rgba(143,224,236,0.14)", border: "1px solid rgba(143,224,236,0.35)" }, secondary: { name: "Ground", text: "#D9B57B", bg: "rgba(217,181,123,0.14)", border: "1px solid rgba(217,181,123,0.35)" } },
+    473: { primary: { name: "Ice", text: "#8FE0EC", bg: "rgba(143,224,236,0.14)", border: "1px solid rgba(143,224,236,0.35)" }, secondary: { name: "Ground", text: "#D9B57B", bg: "rgba(217,181,123,0.14)", border: "1px solid rgba(217,181,123,0.35)" } },
+  };
+
+  function getTypes(id: number): { primary: TypeInfo; secondary?: TypeInfo; list: TypeInfo[] } {
+    const found = POKEMON_TYPES[id];
+    if (found) {
+      return {
+        primary: found.primary,
+        secondary: found.secondary,
+        list: found.secondary ? [found.primary, found.secondary] : [found.primary],
+      };
+    }
+    const defaultType: TypeInfo = {
+      name: "Normal",
+      text: "#5B8CFF",
+      bg: "rgba(91,140,255,0.14)",
+      border: "1px solid rgba(91,140,255,0.35)",
     };
-    return typeMap[id] ?? { name: "Pokémon", color: "#4f8cff", icon: "⭐" };
+    return { primary: defaultType, list: [defaultType] };
+  }
+
+  function getStageInfo(stageText: string, isFinal: boolean): { stage: number; total: number } {
+    const match = stageText.match(/(\d+)\s+of\s+(\d+)/i);
+    if (match) {
+      return { stage: parseInt(match[1], 10), total: parseInt(match[2], 10) };
+    }
+    return { stage: isFinal ? 3 : 1, total: 3 };
+  }
+
+  function getPaceLabel(tier: string): { label: string; isHot: boolean } {
+    switch (tier.toLowerCase()) {
+      case "blazing":
+        return { label: "On Fire", isHot: true };
+      case "fast":
+        return { label: "Fast Pace", isHot: true };
+      case "normal":
+        return { label: "Steady", isHot: false };
+      default:
+        return { label: "Idle", isHot: false };
+    }
   }
 
   const rarityLabel: Record<string, string> = {
@@ -311,821 +381,1558 @@
     uncommon: "Uncommon",
     rare: "Rare",
     legendary: "Legendary",
+    mythical: "Mythical",
   };
 
-  const itemLabel: Record<string, string> = {
-    rareCandy: "Rare Candy",
-    mint: "Nature Mint",
-    shinyCharm: "Shiny Charm",
+  const itemDisplay: Record<string, { name: string; tileBg: string; tileBorder: string; iconColor: string }> = {
+    mint: { name: "Nature Mint", tileBg: "rgba(57,217,138,0.12)", tileBorder: "1px solid rgba(57,217,138,0.3)", iconColor: "#39D98A" },
+    rareCandy: { name: "Rare Candy", tileBg: "rgba(255,98,89,0.12)", tileBorder: "1px solid rgba(255,98,89,0.3)", iconColor: "#FF6259" },
+    egg_basic: { name: "Pokémon Egg (Basic)", tileBg: "rgba(255,255,255,0.05)", tileBorder: "1px solid rgba(255,255,255,0.12)", iconColor: "#E8B84B" },
+    egg_uncommon: { name: "Pokémon Egg (Uncommon+)", tileBg: "rgba(57,217,138,0.10)", tileBorder: "1.5px solid rgba(57,217,138,0.45)", iconColor: "#E8B84B" },
+    egg_rare: { name: "Pokémon Egg (Rare+)", tileBg: "rgba(91,140,255,0.10)", tileBorder: "1.5px solid rgba(91,140,255,0.45)", iconColor: "#E8B84B" },
+    shinyCharm: { name: "Shiny Charm", tileBg: "rgba(232,184,75,0.16)", tileBorder: "1.5px solid rgba(232,184,75,0.5)", iconColor: "#E8B84B" },
   };
 
-  const itemDesc: Record<string, string> = {
-    rareCandy: "Grants +50,000 evolution progress to your active Pokémon.",
-    mint: "Rerolls your active Pokémon's nature and growth bonuses.",
-    shinyCharm: "Increases shiny hatch odds significantly.",
+  const toolColors: Record<string, string> = {
+    claude_code: "#5B8CFF",
+    antigravity: "#39D98A",
+    gemini: "#39D98A",
+    codex: "#A890F0",
+    grok: "#FF8A59",
+    cursor: "#78C850",
+    copilot: "#6890F0",
+    opencode: "#F85888",
   };
 
-  const burnLabel: Record<string, { label: string; icon: string; class: string }> = {
-    idle: { label: "Resting", icon: "💤", class: "burn-idle" },
-    normal: { label: "Coding", icon: "⚡", class: "burn-normal" },
-    fast: { label: "Focus Flow", icon: "🔥", class: "burn-fast" },
-    blazing: { label: "On Fire!", icon: "🚀", class: "burn-blazing" },
-  };
-
-  function getBurnPace(tier: string) {
-    return burnLabel[tier] ?? burnLabel.normal;
-  }
-
-  const tierLabel: Record<string, string> = {
-    uncommon: "Uncommon+",
-    rare: "Rare+",
-  };
-
-  // Sparkline percentage calculation
-  function getProviderRatio(snapshots: ProviderView[]): { name: string; pct: number; color: string }[] {
-    const total = snapshots.reduce((acc, s) => acc + s.todayTotalTokens, 0);
-    if (total === 0) return [];
-    const colors = ["#4f8cff", "#00d2b4", "#ff8a3d", "#a855f7", "#ec4899"];
-    return snapshots.map((s, idx) => ({
-      name: s.displayName,
-      pct: (s.todayTotalTokens / total) * 100,
-      color: colors[idx % colors.length],
-    }));
-  }
+  const navTabs: { id: Tab; label: string }[] = [
+    { id: "buddy", label: "Buddy" },
+    { id: "usage", label: "Usage" },
+    { id: "shop", label: "Shop & Bag" },
+    { id: "pokedex", label: "Pokédex" },
+  ];
 </script>
 
-<div class="app theme-{currentTheme}">
-  <header data-tauri-drag-region onmousedown={startDrag} role="toolbar" aria-label="Window header" tabindex="-1">
-    <div class="header-left" data-tauri-drag-region>
-      <div class="logo-group">
-        <span class="dot" class:ok={!loading}></span>
-        <span class="title">PokeTokenBar</span>
-      </div>
-    </div>
-    <div class="header-right">
-      <button
-        class="ghost icon-btn"
-        class:active-btn={showSettings}
-        onclick={() => (showSettings = !showSettings)}
-        title={showSettings ? "Back to Dashboard" : "Settings"}
-      >
-        ⚙
-      </button>
-      <button class="ghost icon-btn" onclick={togglePet} title="Toggle Floating Desktop Pet">
-        🐾
-      </button>
-      <button class="ghost icon-btn" onclick={refresh} disabled={loading} title="Refresh token counts">
-        <span class:spinning={loading}>↻</span>
-      </button>
-      <button class="ghost icon-btn close-btn" onclick={hideWindow} title="Hide Window">
-        ✕
-      </button>
-    </div>
-  </header>
+<div class="window-root theme-{currentTheme}" onmousedown={startDrag} role="application">
+  <div class="app-card">
 
-  {#if error}
-    <div class="error-banner">
-      <span>⚠️ {error}</span>
-      <button class="ghost small-btn" onclick={refresh}>Retry</button>
-    </div>
-  {/if}
-
-  {#if showSettings}
-    <div class="settings-view">
-      <div class="settings-header">
-        <h3>App Settings</h3>
-        <button class="ghost back-btn" onclick={() => (showSettings = false)}>← Back</button>
+    <header class="app-header" data-tauri-drag-region>
+      <div class="header-brand">
+        <svg width="17" height="17" viewBox="0 0 24 24" class="pokeball-svg">
+          <circle cx="12" cy="12" r="9.5" fill="#f2f2f4"></circle>
+          <path d="M2.5 12a9.5 9.5 0 0 1 19 0Z" fill="#E3372E"></path>
+          <rect x="2.5" y="11.1" width="19" height="1.8" fill="#1b1b1f"></rect>
+          <circle cx="12" cy="12" r="3" fill="#1b1b1f"></circle>
+          <circle cx="12" cy="12" r="1.5" fill="#f2f2f4"></circle>
+        </svg>
+        <span class="brand-title">PokéTokenBar</span>
+        <span class="live-indicator" title="Connected"></span>
       </div>
 
-      <div class="settings-group">
-        <h4>Visual Theme</h4>
-        <div class="theme-picker">
-          <button
-            class="theme-chip"
-            class:active={currentTheme === "midnight"}
-            onclick={() => changeTheme("midnight")}
-          >
-            <span class="theme-preview midnight"></span>
-            <span>Midnight</span>
-          </button>
-          <button
-            class="theme-chip"
-            class:active={currentTheme === "oled"}
-            onclick={() => changeTheme("oled")}
-          >
-            <span class="theme-preview oled"></span>
-            <span>OLED Black</span>
-          </button>
-          <button
-            class="theme-chip"
-            class:active={currentTheme === "cyberpunk"}
-            onclick={() => changeTheme("cyberpunk")}
-          >
-            <span class="theme-preview cyberpunk"></span>
-            <span>Cyberpunk</span>
-          </button>
-          <button
-            class="theme-chip"
-            class:active={currentTheme === "retro"}
-            onclick={() => changeTheme("retro")}
-          >
-            <span class="theme-preview retro"></span>
-            <span>Game Boy</span>
-          </button>
-        </div>
+      <div class="header-actions">
+        <button
+          class="window-btn"
+          class:active-action={showSettings}
+          onclick={() => (showSettings = !showSettings)}
+          title="Settings"
+          aria-label="Settings"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+            <line x1="4" y1="6" x2="20" y2="6"></line>
+            <circle cx="9" cy="6" r="1.8" fill="#0e1016" stroke="currentColor"></circle>
+            <line x1="4" y1="12" x2="20" y2="12"></line>
+            <circle cx="16" cy="12" r="1.8" fill="#0e1016" stroke="currentColor"></circle>
+            <line x1="4" y1="18" x2="20" y2="18"></line>
+            <circle cx="7" cy="18" r="1.8" fill="#0e1016" stroke="currentColor"></circle>
+          </svg>
+        </button>
+
+        <button
+          class="window-btn"
+          onclick={refresh}
+          disabled={loading}
+          title="Refresh token usage"
+          aria-label="Refresh"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class:spinning={loading}>
+            <path d="M4 12a8 8 0 0 1 13.66-5.66"></path>
+            <path d="M20 12a8 8 0 0 1-13.66 5.66"></path>
+            <path d="M18 3v4h-4"></path>
+            <path d="M6 21v-4h4"></path>
+          </svg>
+        </button>
+
+        <span class="header-divider"></span>
+
+        <button class="window-btn" onclick={minimizeWindow} title="Minimize" aria-label="Minimize">
+          <svg width="10" height="10" viewBox="0 0 12 12">
+            <line x1="2" y1="9" x2="10" y2="9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></line>
+          </svg>
+        </button>
+
+        <button class="window-btn close-btn" onclick={hideWindow} title="Hide to system tray" aria-label="Close">
+          <svg width="10" height="10" viewBox="0 0 12 12">
+            <line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></line>
+            <line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></line>
+          </svg>
+        </button>
       </div>
+    </header>
 
-      <div class="settings-group">
-        <h4>General</h4>
-        <div class="settings-row">
-          <div class="setting-info">
-            <span class="setting-title">Launch at Login</span>
-            <span class="setting-desc">Start PokeTokenBar automatically on system startup</span>
-          </div>
-          <input
-            type="checkbox"
-            checked={autostartActive}
-            onchange={toggleAutostart}
-            aria-label="Launch at login"
-          />
-        </div>
-
-        <div class="settings-row">
-          <div class="setting-info">
-            <span class="setting-title">Refresh Interval</span>
-            <span class="setting-desc">How often token logs are polled in the background</span>
-          </div>
-          <select
-            class="custom-select"
-            value={refreshIntervalSec}
-            onchange={(e) => changeRefreshInterval(parseInt((e.target as HTMLSelectElement).value, 10))}
-            aria-label="Refresh Interval"
-          >
-            <option value={15}>15 seconds</option>
-            <option value={30}>30 seconds</option>
-            <option value={60}>1 minute (recommended)</option>
-            <option value={120}>2 minutes</option>
-            <option value={300}>5 minutes</option>
-          </select>
-        </div>
-
-        <div class="settings-row">
-          <div class="setting-info">
-            <span class="setting-title">Animated Pokémon Sprites</span>
-            <span class="setting-desc">Use animated Showdown GIFs instead of static sprites</span>
-          </div>
-          <input
-            type="checkbox"
-            checked={animatedSprites}
-            onchange={toggleAnimatedSprites}
-            aria-label="Animated Pokémon Sprites"
-          />
-        </div>
-      </div>
-
-      <div class="settings-group">
-        <h4>Desktop Companion Pet</h4>
-        <div class="settings-row">
-          <div class="setting-info">
-            <span class="setting-title">Floating Widget</span>
-            <span class="setting-desc">Always-on-top transparent companion pet on desktop</span>
-          </div>
-          <button class="ghost small-btn" onclick={togglePet}>Toggle Pet</button>
-        </div>
-      </div>
-
-      <div class="settings-group">
-        <h4>About</h4>
-        <div class="about-card">
-          <div class="about-title">
-            <span>PokeTokenBar</span>
-            <span class="version-tag">v0.2.1</span>
-          </div>
-          <p class="sub">Cross-platform Pokémon companion for your AI coding tokens on Windows & Linux.</p>
-        </div>
-      </div>
-    </div>
-  {:else if snap}
-    {@const c = snap.companion}
-    {@const u = snap.usage}
-
-    <!-- Evolution / Graduation Celebration Banner -->
-    {#if (c.justEvolvedTo || c.justGraduated) && !celebrationDismissed}
-      <div class="celebration-banner">
-        <div class="celebration-sparkles">✨ 🎉 ✨</div>
-        <div class="celebration-content">
-          {#if c.justEvolvedTo}
-            <strong>Evolution!</strong> Your buddy evolved into <strong>{c.justEvolvedTo}</strong>!
-          {:else if c.justGraduated}
-            <strong>Graduation!</strong> <strong>{c.justGraduated}</strong> reached final stage!
+    <div class="nav-bar" role="tablist">
+      {#each navTabs as tab (tab.id)}
+        <button
+          class="tab-btn"
+          class:active={currentTab === tab.id && !showSettings}
+          onclick={() => {
+            currentTab = tab.id;
+            showSettings = false;
+          }}
+          role="tab"
+          aria-selected={currentTab === tab.id && !showSettings}
+        >
+          {#if tab.id === "buddy"}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <ellipse cx="12" cy="16" rx="5.5" ry="4.3"></ellipse>
+              <ellipse cx="5.2" cy="9.5" rx="2.1" ry="2.6" transform="rotate(-15 5.2 9.5)"></ellipse>
+              <ellipse cx="9.6" cy="6.3" rx="2.1" ry="2.7" transform="rotate(-5 9.6 6.3)"></ellipse>
+              <ellipse cx="14.4" cy="6.3" rx="2.1" ry="2.7" transform="rotate(5 14.4 6.3)"></ellipse>
+              <ellipse cx="18.8" cy="9.5" rx="2.1" ry="2.6" transform="rotate(15 18.8 9.5)"></ellipse>
+            </svg>
+          {:else if tab.id === "usage"}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="19" x2="5" y2="13"></line>
+              <line x1="12" y1="19" x2="12" y2="8"></line>
+              <line x1="19" y1="19" x2="19" y2="4"></line>
+            </svg>
+          {:else if tab.id === "shop"}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 9V7a3 3 0 0 1 6 0v2"></path>
+              <rect x="4.5" y="9" width="15" height="11.5" rx="2.2"></rect>
+            </svg>
+          {:else if tab.id === "pokedex"}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="4.5" width="16" height="15" rx="3"></rect>
+              <circle cx="8.2" cy="8.6" r="1.5"></circle>
+              <line x1="12.5" y1="8.6" x2="17" y2="8.6"></line>
+              <line x1="7" y1="14.5" x2="17" y2="14.5"></line>
+              <line x1="7" y1="17.2" x2="13" y2="17.2"></line>
+            </svg>
           {/if}
-        </div>
-        <button class="ghost close-celebration" onclick={() => (celebrationDismissed = true)}>✕</button>
-      </div>
-    {/if}
-
-    <!-- Tab Bar Navigation -->
-    <div class="nav-tabs" role="tablist" aria-label="Navigation Tabs">
-      <button
-        class="tab-btn"
-        class:active={currentTab === "companion"}
-        onclick={() => (currentTab = "companion")}
-        role="tab"
-        aria-selected={currentTab === "companion"}
-      >
-        <span class="tab-icon">🐾</span>
-        <span class="tab-label">Buddy</span>
-      </button>
-      <button
-        class="tab-btn"
-        class:active={currentTab === "stats"}
-        onclick={() => (currentTab = "stats")}
-        role="tab"
-        aria-selected={currentTab === "stats"}
-      >
-        <span class="tab-icon">📊</span>
-        <span class="tab-label">Usage</span>
-      </button>
-      <button
-        class="tab-btn"
-        class:active={currentTab === "shop"}
-        onclick={() => (currentTab = "shop")}
-        role="tab"
-        aria-selected={currentTab === "shop"}
-      >
-        <span class="tab-icon">🎒</span>
-        <span class="tab-label">Shop & Bag</span>
-      </button>
-      <button
-        class="tab-btn"
-        class:active={currentTab === "pokedex"}
-        onclick={() => (currentTab = "pokedex")}
-        role="tab"
-        aria-selected={currentTab === "pokedex"}
-      >
-        <span class="tab-icon">📖</span>
-        <span class="tab-label">Pokédex</span>
-        {#if c.dex.length > 0}
-          <span class="badge-count">{c.dex.length}</span>
-        {/if}
-      </button>
+          <span>{tab.label}</span>
+          {#if tab.id === "pokedex" && snap && snap.companion.dex.length > 0}
+            <span class="tab-badge">{snap.companion.dex.length}</span>
+          {/if}
+        </button>
+      {/each}
     </div>
 
-    <!-- Tab 1: Companion -->
-    {#if currentTab === "companion"}
-      <div class="tab-content">
-        <section class="companion-hero">
-          {#if c.isEgg}
-            <div class="hero-left">
-              <div class="sprite egg-anim">🥚</div>
-            </div>
-            <div class="hero-right">
-              <div class="hero-header">
-                <h2>Token Egg</h2>
-                <span class="type-pill" style="background: #e5a93c;">🐣 Egg</span>
-              </div>
-              <p class="sub">Burn tokens while coding to hatch this egg!</p>
-              <div class="progress-wrap">
-                <div class="bar">
-                  <div class="fill egg-fill" style="width: {(c.eggProgress * 100).toFixed(1)}%"></div>
-                </div>
-                <div class="progress-labels">
-                  <span>{(c.eggProgress * 100).toFixed(0)}% Hatched</span>
-                  <span>{tokens(c.eggTokensToHatch)} tokens left</span>
-                </div>
-              </div>
-            </div>
-          {:else if c.hasActive && c.currentSpeciesId}
-            {@const pType = getPokemonType(c.currentSpeciesId)}
-            <div class="hero-left">
-              <img
-                class="sprite mon-anim"
-                src={spriteUrl(c.currentSpeciesId, c.isShiny)}
-                alt={c.displayName}
-                onerror={(e) => fallbackStaticSprite(e, c.currentSpeciesId ?? 1, c.isShiny)}
-              />
-            </div>
-            <div class="hero-right">
-              <div class="hero-header">
-                <h2>
-                  {c.displayName}
-                  {#if c.isShiny}<span class="shiny-star" title="Shiny Pokémon!">✨</span>{/if}
-                </h2>
-                <div class="pill-group">
-                  <span class="type-pill" style="background: {pType.color};">{pType.icon} {pType.name}</span>
-                  <span class="rarity-pill {c.rarity}">{rarityLabel[c.rarity ?? ""] ?? c.rarity}</span>
-                </div>
-              </div>
+    <!-- Scrollable Main Content Container -->
+    <main class="content-scroll pk-scroll">
 
-              <p class="sub">
-                {c.stageText} {#if c.isFinalStage}· <span class="max-badge">Mastered</span>{/if}
-              </p>
+      <!-- Settings Overlay View -->
+      {#if showSettings}
+        <div class="settings-container">
+          <div class="settings-header">
+            <span class="settings-title">Preferences</span>
+            <button class="back-btn" onclick={() => (showSettings = false)}>Done</button>
+          </div>
 
-              {#if !c.isFinalStage}
-                <div class="progress-wrap">
-                  <div class="bar">
-                    <div class="fill mon-fill" style="width: {(c.progress * 100).toFixed(1)}%"></div>
-                  </div>
-                  <div class="progress-labels">
-                    <span>{(c.progress * 100).toFixed(0)}% Growth</span>
-                    <span>{tokens(c.tokensToNext)} to Next Stage</span>
-                  </div>
-                </div>
+          <div class="settings-card">
+            <div class="setting-row">
+              <div class="setting-text">
+                <span class="setting-label">Launch at Login</span>
+                <span class="setting-sub">Start PokeTokenBar on system boot</span>
+              </div>
+              <button class="toggle-switch" class:active={autostartActive} onclick={toggleAutostart} aria-label="Toggle launch at login">
+                <span class="toggle-handle"></span>
+              </button>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-text">
+                <span class="setting-label">Animated Sprites</span>
+                <span class="setting-sub">Use Showdown animated GIF sprites</span>
+              </div>
+              <button class="toggle-switch" class:active={animatedSprites} onclick={toggleAnimatedSprites} aria-label="Toggle animated sprites">
+                <span class="toggle-handle"></span>
+              </button>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-text">
+                <span class="setting-label">Desktop Pet Widget</span>
+                <span class="setting-sub">Floating Pokémon companion on screen</span>
+              </div>
+              <button class="action-btn" onclick={togglePet}>Toggle Pet</button>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-text">
+                <span class="setting-label">Poll Frequency</span>
+                <span class="setting-sub">How often token logs are parsed</span>
+              </div>
+              <div class="pill-options">
+                {#each [10, 30, 60, 120] as sec}
+                  <button
+                    class="pill-choice"
+                    class:selected={refreshIntervalSec === sec}
+                    onclick={() => changeRefreshInterval(sec)}
+                  >
+                    {sec}s
+                  </button>
+                {/each}
+              </div>
+            </div>
+
+            <div class="setting-row theme-row">
+              <div class="setting-text">
+                <span class="setting-label">Color Theme</span>
+                <span class="setting-sub">Customize app palette</span>
+              </div>
+              <div class="theme-grid">
+                {#each [["midnight", "Midnight Glass"], ["oled", "OLED Dark"], ["cyberpunk", "Neon Cyber"], ["retro", "Game Boy"]] as [themeKey, label]}
+                  <button
+                    class="theme-choice theme-btn-{themeKey}"
+                    class:selected={currentTheme === themeKey}
+                    onclick={() => setTheme(themeKey as Theme)}
+                  >
+                    {label}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          </div>
+
+          <div class="about-box">
+            <div class="about-header">
+              <span>PokéTokenBar</span>
+              <span class="version-tag">v0.2.1</span>
+            </div>
+            <p class="about-sub">Pokémon companion for AI coding tokens on Windows & Linux.</p>
+          </div>
+        </div>
+
+      {:else if snap}
+        {@const c = snap.companion}
+        {@const u = snap.usage}
+
+        {#if (c.justEvolvedTo || c.justGraduated) && !celebrationDismissed}
+          <div class="celebration-banner">
+            <span class="celebration-icon">✨</span>
+            <span class="celebration-text">
+              {#if c.justEvolvedTo}
+                Your partner evolved into <strong>{c.justEvolvedTo}</strong>!
               {:else}
-                <div class="maxed-notice">🌟 Final Evolution Reached!</div>
+                Your partner graduated into the Hall of Fame!
               {/if}
-            </div>
-          {:else}
-            <div class="empty-state">
-              <span class="empty-icon">🥚</span>
-              <p>No active companion. Visit the PokéShop to adopt an egg!</p>
-              <button class="ghost small-btn" onclick={() => (currentTab = "shop")}>Go to Shop</button>
-            </div>
-          {/if}
-        </section>
-
-        <!-- Quick Summary Strip -->
-        <section class="metrics-grid">
-          <div class="metric-card">
-            <span class="metric-val">{compact(u.todayTotalTokens)}</span>
-            <span class="metric-lbl">Tokens Today</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-val">${u.todayCostTotal.toFixed(2)}</span>
-            <span class="metric-lbl">Cost Today</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-val {getBurnPace(u.burnTier).class}">
-              {getBurnPace(u.burnTier).icon} {getBurnPace(u.burnTier).label}
             </span>
-            <span class="metric-lbl">Current Pace</span>
+            <button class="celebration-close" onclick={() => (celebrationDismissed = true)}>✕</button>
           </div>
-        </section>
-
-        <!-- Quick Item Actions -->
-        {#if c.hasActive && !c.isEgg}
-          <section class="quick-actions-card">
-            <div class="card-title">Quick Items</div>
-            <div class="actions-row">
-              <button class="item-btn" onclick={useCandy} title="Add +50,000 progress">
-                <span>🍬 Use Rare Candy</span>
-              </button>
-              <button class="item-btn" onclick={useMint} title="Reroll nature">
-                <span>🌱 Use Mint</span>
-              </button>
-            </div>
-          </section>
-        {/if}
-      </div>
-    {/if}
-
-    <!-- Tab 2: Stats & Limits -->
-    {#if currentTab === "stats"}
-      <div class="tab-content">
-        <!-- Usage Timeframe Cards -->
-        <section class="metrics-grid">
-          <div class="metric-card">
-            <span class="metric-val">{compact(u.todayTotalTokens)}</span>
-            <span class="metric-lbl">Today</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-val">{compact(u.weekTotalTokens)}</span>
-            <span class="metric-lbl">This Week</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-val">{compact(u.monthTotalTokens)}</span>
-            <span class="metric-lbl">This Month</span>
-          </div>
-        </section>
-
-        <!-- Provider Ratio Breakdown Bar -->
-        {#if u.snapshots.length > 0}
-          {@const ratios = getProviderRatio(u.snapshots)}
-          <section class="provider-section">
-            <div class="section-title">Active AI Tools Today</div>
-            <div class="ratio-bar">
-              {#each ratios as r}
-                <div
-                  class="ratio-segment"
-                  style="width: {r.pct}%; background: {r.color};"
-                  title="{r.name}: {r.pct.toFixed(1)}%"
-                ></div>
-              {/each}
-            </div>
-            <div class="sources-list">
-              {#each u.snapshots as s, idx (s.id)}
-                <div class="source-row">
-                  <div class="source-info">
-                    <span class="source-dot" style="background: {ratios[idx]?.color ?? '#4f8cff'};"></span>
-                    <span class="source-name">{s.displayName}</span>
-                  </div>
-                  <div class="source-counts">
-                    <span class="token-num">{compact(s.todayTotalTokens)}</span>
-                    <span class="token-sub">today</span>
-                  </div>
-                </div>
-              {/each}
-            </div>
-          </section>
         {/if}
 
-        <!-- Claude Limits Card -->
-        {#if u.limits && (u.limits.fiveHour?.utilization != null || u.limits.sevenDay?.utilization != null)}
-          <section class="limits-card">
-            <div class="limits-header">
-              <div class="limits-title-group">
-                <h3>Claude Rate Limits</h3>
-                {#if u.limits.planDisplay}
-                  <span class="plan-badge">{u.limits.planDisplay}</span>
-                {/if}
+        {#if currentTab === "buddy"}
+          {@const pace = getPaceLabel(u.burnTier)}
+          <div class="tab-pane">
+            {#if c.isEgg}
+              <div class="buddy-hero egg-mode">
+                <div class="hero-header-row">
+                  <span class="section-tag">INCUBATING EGG</span>
+                </div>
+                <div class="hero-body">
+                  <div class="sprite-box">
+                    <div class="egg-sprite">🥚</div>
+                  </div>
+                  <div class="hero-details">
+                    <div class="name-row">
+                      <span class="mon-name">Token Egg</span>
+                      <span class="rarity-badge">Egg</span>
+                    </div>
+                    <div class="types-row">
+                      <span class="type-pill egg-pill">🐣 Mystery Hatch</span>
+                    </div>
+                    <div class="stage-row">
+                      <span class="stage-label">Incubation</span>
+                      <span class="stage-pct">{(c.eggProgress * 100).toFixed(0)}%</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="progress-container">
+                  <div class="progress-track">
+                    <div class="progress-fill egg-gradient" style="width: {(c.eggProgress * 100).toFixed(1)}%"></div>
+                  </div>
+                  <div class="progress-sub">{tokens(c.eggTokensToHatch)} tokens to hatch</div>
+                </div>
               </div>
-            </div>
+            {:else if c.hasActive && c.currentSpeciesId}
+              {@const typeInfo = getTypes(c.currentSpeciesId)}
+              {@const stageInfo = getStageInfo(c.stageText, c.isFinalStage)}
+              {@const growthPct = Math.round(c.progress * 100)}
 
-            {#if u.limits.fiveHour && u.limits.fiveHour.utilization != null}
-              <div class="limit-row">
-                <div class="limit-labels">
-                  <span>5-Hour Session Limit</span>
-                  <span class="limit-pct">{formatUtilization(u.limits.fiveHour.utilization)}</span>
+              <div class="buddy-hero">
+                <div class="hero-glow" style="background: radial-gradient(circle, {typeInfo.primary.bg.replace('0.14', '0.22')}, transparent 70%);"></div>
+                <div class="hero-header-row">
+                  <span class="section-tag">ACTIVE BUDDY</span>
+                  <div class="stage-pips">
+                    {#each Array(stageInfo.total) as _, i}
+                      <span class="pip" class:filled={i < stageInfo.stage}></span>
+                    {/each}
+                  </div>
                 </div>
-                <div class="bar">
-                  <div class="fill limit-fill" style="width: {getUtilizationPercent(u.limits.fiveHour.utilization)}%"></div>
+                <div class="hero-body">
+                  <div class="sprite-box">
+                    <img
+                      class="hero-sprite"
+                      src={spriteUrl(c.currentSpeciesId, c.isShiny)}
+                      alt={c.displayName}
+                      onerror={(e) => fallbackStaticSprite(e, c.currentSpeciesId ?? 1, c.isShiny)}
+                    />
+                  </div>
+                  <div class="hero-details">
+                    <div class="name-row">
+                      <span class="mon-name">
+                        {c.displayName}
+                        {#if c.isShiny}<span class="shiny-star" title="Shiny!">✨</span>{/if}
+                      </span>
+                      <span class="rarity-badge">{rarityLabel[c.rarity ?? ""] ?? "Common"}</span>
+                    </div>
+                    <div class="types-row">
+                      {#each typeInfo.list as t}
+                        <span class="type-pill" style="background: {t.bg}; border: {t.border}; color: {t.text};">
+                          {t.name}
+                        </span>
+                      {/each}
+                    </div>
+                    <div class="stage-row">
+                      <span class="stage-label">Stage {stageInfo.stage}/{stageInfo.total}</span>
+                      <span class="stage-pct">{growthPct}%</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            {/if}
-
-            {#if u.limits.sevenDay && u.limits.sevenDay.utilization != null}
-              <div class="limit-row">
-                <div class="limit-labels">
-                  <span>7-Day Weekly Limit</span>
-                  <span class="limit-pct">{formatUtilization(u.limits.sevenDay.utilization)}</span>
-                </div>
-                <div class="bar">
-                  <div class="fill limit-fill" style="width: {getUtilizationPercent(u.limits.sevenDay.utilization)}%"></div>
+                <div class="progress-container">
+                  <div class="progress-track">
+                    <div
+                      class="progress-fill"
+                      style="background: linear-gradient(90deg, {typeInfo.primary.text}, {typeInfo.secondary?.text ?? typeInfo.primary.text}); width: {growthPct}%;"
+                    ></div>
+                  </div>
+                  <div class="progress-sub">{tokens(c.tokensToNext)} tokens to next stage</div>
                 </div>
               </div>
             {/if}
-          </section>
-        {/if}
-      </div>
-    {/if}
 
-    <!-- Tab 3: Shop & Bag -->
-    {#if currentTab === "shop"}
-      <div class="tab-content">
-        <!-- Balance Header -->
-        <div class="balance-card">
-          <div class="balance-left">
-            <span class="coin-icon">🪙</span>
-            <div class="balance-text">
-              <span class="balance-num">{tokens(c.availableTokens)}</span>
-              <span class="balance-lbl">Tokens Available to Spend</span>
+            <div class="metrics-grid">
+              <div class="metric-card">
+                <svg width="15" height="15" viewBox="0 0 24 24" class="metric-icon">
+                  <circle cx="12" cy="12" r="9.2" fill="#E8B84B" stroke="#9C6B1F" stroke-width="1.1"></circle>
+                  <circle cx="12" cy="12" r="5.6" fill="none" stroke="#9C6B1F" stroke-width="1" opacity=".55"></circle>
+                  <ellipse cx="9" cy="8.3" rx="2.3" ry="1.3" fill="#fff" opacity=".3"></ellipse>
+                </svg>
+                <span class="metric-val">{compact(u.todayTotalTokens)}</span>
+                <span class="metric-lbl">TOKENS TODAY</span>
+              </div>
+              <div class="metric-card">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8B93A7" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="metric-icon">
+                  <path d="M12 5v14"></path>
+                  <path d="M16 8.5c0-1.7-1.8-2.8-4-2.8s-4 1-4 2.5c0 1.6 1.3 2.2 4 2.8s4 1.2 4 2.8c0 1.6-1.8 2.6-4 2.6s-4-1-4-2.6"></path>
+                </svg>
+                <span class="metric-val">${u.todayCostTotal.toFixed(2)}</span>
+                <span class="metric-lbl">COST TODAY</span>
+              </div>
+              <div class="metric-card pace-card" class:hot={pace.isHot}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill={pace.isHot ? "#FF8A59" : "#8B93A7"} class="metric-icon">
+                  <path d="M12.5 2.3c.9 2.8-1.8 4-2.6 6.4-.5 1.6.1 2.9 1.1 3.6.2-1 .9-1.8 1.6-2.3.1 1 .5 1.7 1.1 2.3a3.6 3.6 0 0 1 1.1 2.6 4.3 4.3 0 0 1-8.6 0c0-3.9 2.9-6.5 6.3-12.6Z"></path>
+                </svg>
+                <span class="metric-val" style="color: {pace.isHot ? '#FF8A59' : '#F2F3F5'};">{pace.label}</span>
+                <span class="metric-lbl">CURRENT PACE</span>
+              </div>
             </div>
-          </div>
-        </div>
 
-        <!-- Bag / Inventory -->
-        <section class="inventory-section">
-          <div class="section-title">My Bag</div>
-          {#if c.ownedItems.length === 0}
-            <p class="sub empty-bag">Your bag is empty. Buy items below!</p>
-          {:else}
-            <div class="bag-grid">
-              {#each c.ownedItems as [kind, count] (kind)}
-                <div class="bag-card">
-                  <div class="bag-header">
-                    <span class="item-name">{itemLabel[kind] ?? kind}</span>
-                    <span class="item-count">×{count}</span>
-                  </div>
-                  <p class="item-desc">{itemDesc[kind] ?? ""}</p>
-                  {#if kind === "rareCandy"}
-                    <button class="ghost small-btn" disabled={!c.hasActive || c.isEgg} onclick={useCandy}>
-                      Use Candy
-                    </button>
-                  {:else if kind === "mint"}
-                    <button class="ghost small-btn" disabled={!c.hasActive || c.isEgg} onclick={useMint}>
-                      Use Mint
-                    </button>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </section>
-
-        <!-- Shop -->
-        <section class="shop-section">
-          <div class="section-title">PokéShop</div>
-          <div class="shop-list">
-            {#each c.shop as item (item.kind + (item.tier ?? ""))}
-              <div class="shop-card">
-                <div class="shop-info">
-                  <div class="shop-item-name">
-                    {item.kind === "egg"
-                      ? `Pokémon Egg (${tierLabel[item.tier ?? ""] ?? "Basic"})`
-                      : itemLabel[item.kind] ?? item.kind}
-                  </div>
-                  <div class="shop-item-price">
-                    <span class="coin-tiny">🪙</span> {tokens(item.price)} tokens
-                  </div>
-                </div>
+            <div class="quick-items-section">
+              <span class="section-tag">QUICK ITEMS</span>
+              <div class="quick-grid">
                 <button
-                  class="buy-btn"
-                  disabled={!item.canBuy}
-                  onclick={() => (item.kind === "egg" ? buyEgg(item.tier) : buy(item.kind))}
+                  class="quick-btn"
+                  disabled={!c.hasActive || c.isEgg}
+                  onclick={useCandy}
                 >
-                  Buy
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#FF6259">
+                    <path d="M9 9 4 6v12l5-3Z"></path>
+                    <path d="M15 9l5-3v12l-5-3Z"></path>
+                    <rect x="9" y="9" width="6" height="6" rx="1.5"></rect>
+                  </svg>
+                  <span>Use Rare Candy</span>
+                </button>
+                <button
+                  class="quick-btn"
+                  disabled={!c.hasActive || c.isEgg}
+                  onclick={useMint}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#39D98A">
+                    <path d="M20 4C11 4 4 10 4 17c0 1.5 1 2.5 2.2 2.8C7 13 12 8 20 4Z"></path>
+                  </svg>
+                  <span>Use Mint</span>
                 </button>
               </div>
-            {/each}
-          </div>
-        </section>
-      </div>
-    {/if}
-
-    <!-- Tab 4: Pokédex -->
-    {#if currentTab === "pokedex"}
-      <div class="tab-content">
-        <div class="pokedex-header">
-          <div class="section-title">Discovered Pokémon</div>
-          <span class="dex-counter">{c.dex.length} Collected</span>
-        </div>
-
-        {#if c.dex.length === 0}
-          <div class="empty-state">
-            <span class="empty-icon">📖</span>
-            <p>Your Pokédex is currently empty.</p>
-            <p class="sub">Hatch eggs with your coding tokens to fill your collection!</p>
-          </div>
-        {:else}
-          <div class="pokedex-grid">
-            {#each c.dex as d (d.id)}
-              {@const type = getPokemonType(d.id)}
-              <div class="dex-card" class:active-buddy={d.isRaising}>
-                {#if d.isRaising}
-                  <span class="active-badge">Active</span>
-                {/if}
-                <img
-                  class="dex-sprite"
-                  src={spriteUrl(d.id, d.isShiny, true)}
-                  alt={d.name}
-                  onerror={(e) => fallbackStaticSprite(e, d.id, d.isShiny)}
-                  loading="lazy"
-                />
-                <div class="dex-info">
-                  <div class="dex-name">
-                    {d.name}
-                    {#if d.isShiny}<span class="shiny-star">✨</span>{/if}
-                  </div>
-                  <span class="type-mini-pill" style="background: {type.color};">{type.name}</span>
-                </div>
-              </div>
-            {/each}
+            </div>
           </div>
         {/if}
-      </div>
-    {/if}
 
-  {:else if !loading}
-    <div class="loading-state">
-      <div class="loading-spinner"></div>
-      <p class="sub">Connecting to token providers…</p>
-    </div>
-  {/if}
+        {#if currentTab === "usage"}
+          <div class="tab-pane">
+            <div class="metrics-grid">
+              <div class="metric-card">
+                <span class="metric-val">{compact(u.todayTotalTokens)}</span>
+                <span class="metric-lbl">TODAY</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-val">{compact(u.weekTotalTokens)}</span>
+                <span class="metric-lbl">THIS WEEK</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-val">{compact(u.monthTotalTokens)}</span>
+                <span class="metric-lbl">THIS MONTH</span>
+              </div>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-title-red">Active AI Tools Today</div>
+              {#if u.snapshots.length > 0}
+                {@const totalToday = u.snapshots.reduce((acc, s) => acc + s.todayTotalTokens, 0) || 1}
+                <div class="tool-bar">
+                  {#each u.snapshots as s}
+                    {#if s.todayTotalTokens > 0}
+                      <div
+                        class="tool-bar-seg"
+                        style="width: {(s.todayTotalTokens / totalToday) * 100}%; background: {toolColors[s.id] ?? '#5B8CFF'};"
+                      ></div>
+                    {/if}
+                  {/each}
+                </div>
+                <div class="tools-list">
+                  {#each u.snapshots as s}
+                    <div class="tool-row">
+                      <div class="tool-name-group">
+                        <span class="tool-dot" style="background: {toolColors[s.id] ?? '#5B8CFF'};"></span>
+                        <span class="tool-name">{s.displayName}</span>
+                      </div>
+                      <div class="tool-val-group">
+                        <span class="tool-val">{tokens(s.todayTotalTokens)}</span>
+                        <span class="tool-sub">today</span>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {:else}
+                <p class="empty-hint">No active AI tools detected yet today.</p>
+              {/if}
+            </div>
+
+            {#if u.limits}
+              <div class="panel-card">
+                <div class="limits-header">
+                  <span class="panel-title-red">Claude API Limits</span>
+                  {#if u.limits.planDisplay}
+                    <span class="plan-pill">{u.limits.planDisplay}</span>
+                  {/if}
+                </div>
+                {#if u.limits.fiveHour}
+                  {@const fh = u.limits.fiveHour}
+                  <div class="limit-block">
+                    <div class="limit-labels">
+                      <span>5-Hour Session Window</span>
+                      <span class="limit-pct">{fh.utilization !== null && fh.utilization !== undefined ? formatUtilization(fh.utilization) : "—"}</span>
+                    </div>
+                    <div class="limit-track">
+                      <div class="limit-fill" style="width: {fh.utilization !== null && fh.utilization !== undefined ? getUtilizationPercent(fh.utilization) : 0}%;"></div>
+                    </div>
+                  </div>
+                {/if}
+                {#if u.limits.sevenDay}
+                  {@const sd = u.limits.sevenDay}
+                  <div class="limit-block">
+                    <div class="limit-labels">
+                      <span>7-Day Weekly Window</span>
+                      <span class="limit-pct">{sd.utilization !== null && sd.utilization !== undefined ? formatUtilization(sd.utilization) : "—"}</span>
+                    </div>
+                    <div class="limit-track">
+                      <div class="limit-fill" style="width: {sd.utilization !== null && sd.utilization !== undefined ? getUtilizationPercent(sd.utilization) : 0}%;"></div>
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        {#if currentTab === "shop"}
+          <div class="tab-pane">
+            <div class="wallet-card">
+              <svg width="120" height="120" viewBox="0 0 24 24" class="wallet-watermark">
+                <circle cx="12" cy="12" r="9.5" fill="none" stroke="#fff" stroke-width="1.4"></circle>
+                <path d="M2.5 12h19" stroke="#fff" stroke-width="1.4"></path>
+                <circle cx="12" cy="12" r="3" fill="none" stroke="#fff" stroke-width="1.4"></circle>
+              </svg>
+              <div class="wallet-content">
+                <svg width="30" height="30" viewBox="0 0 24 24" class="wallet-coin">
+                  <circle cx="12" cy="12" r="9.2" fill="#E8B84B" stroke="#9C6B1F" stroke-width="1.1"></circle>
+                  <circle cx="12" cy="12" r="5.6" fill="none" stroke="#9C6B1F" stroke-width="1" opacity=".55"></circle>
+                  <ellipse cx="9" cy="8.3" rx="2.3" ry="1.3" fill="#fff" opacity=".3"></ellipse>
+                </svg>
+                <div class="wallet-text">
+                  <span class="wallet-amount">{tokens(c.availableTokens)}</span>
+                  <span class="wallet-label">TOKENS AVAILABLE TO SPEND</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel-card">
+              <div class="bag-header">
+                <span class="panel-title">My Bag</span>
+                {#if c.ownedItems.length > 0}
+                  <span class="bag-count-badge">{c.ownedItems.reduce((a, [_, n]) => a + n, 0)} items</span>
+                {/if}
+              </div>
+              {#if c.ownedItems.length > 0}
+                <div class="bag-list">
+                  {#each c.ownedItems as [kind, count]}
+                    {@const disp = itemDisplay[kind] ?? { name: kind, tileBg: "rgba(255,255,255,0.05)", tileBorder: "1px solid rgba(255,255,255,0.1)", iconColor: "#E8B84B" }}
+                    <div class="bag-item-row">
+                      <div class="item-tile" style="background: {disp.tileBg}; border: {disp.tileBorder};">
+                        {#if kind === "mint"}
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill={disp.iconColor}><path d="M20 4C11 4 4 10 4 17c0 1.5 1 2.5 2.2 2.8C7 13 12 8 20 4Z"></path></svg>
+                        {:else if kind === "rareCandy"}
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill={disp.iconColor}><path d="M9 9 4 6v12l5-3Z"></path><path d="M15 9l5-3v12l-5-3Z"></path><rect x="9" y="9" width="6" height="6" rx="1.5"></rect></svg>
+                        {:else if kind.startsWith("egg")}
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill={disp.iconColor}><path d="M12 2C7.5 8.5 5 13 5 16.5A7 7 0 0 0 19 16.5C19 13 16.5 8.5 12 2Z"></path></svg>
+                        {:else}
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill={disp.iconColor}><path d="M12 2.5c.3 3.2 1 5.6 2.1 7.1 1.5 1.1 3.9 1.8 7.1 2.1-3.2.3-5.6 1-7.1 2.1-1.1 1.5-1.8 3.9-2.1 7.1-.3-3.2-1-5.6-2.1-7.1-1.5-1.1-3.9-1.8-7.1-2.1 3.2-.3 5.6-1 7.1-2.1 1.1-1.5 1.8-3.9 2.1-7.1Z"></path></svg>
+                        {/if}
+                      </div>
+                      <span class="bag-item-name">{disp.name}</span>
+                      <span class="bag-item-qty">×{count}</span>
+                    </div>
+                  {/each}
+                </div>
+              {:else}
+                <div class="empty-bag-state">
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#3C4152" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9V7a3 3 0 0 1 6 0v2"></path><rect x="4.5" y="9" width="15" height="11.5" rx="2.2"></rect></svg>
+                  <span class="empty-bag-text">Your bag is empty. Buy items below!</span>
+                </div>
+              {/if}
+            </div>
+
+            <div class="panel-card">
+              <div class="shop-header">
+                <span class="panel-title">PokéShop</span>
+                <span class="shop-sub">Spend tokens to grow your buddy</span>
+              </div>
+              <div class="shop-items-list">
+                {#each c.shop as item (item.kind + (item.tier ?? ""))}
+                  {@const itemKey = item.kind === "egg" ? `egg_${item.tier ?? "basic"}` : item.kind}
+                  {@const disp = itemDisplay[itemKey] ?? { name: item.kind, tileBg: "rgba(255,255,255,0.05)", tileBorder: "1px solid rgba(255,255,255,0.1)", iconColor: "#E8B84B" }}
+                  <div class="shop-item-row">
+                    <div class="item-tile" style="background: {disp.tileBg}; border: {disp.tileBorder};">
+                      {#if item.kind === "mint"}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill={disp.iconColor}><path d="M20 4C11 4 4 10 4 17c0 1.5 1 2.5 2.2 2.8C7 13 12 8 20 4Z"></path></svg>
+                      {:else if item.kind === "rareCandy"}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill={disp.iconColor}><path d="M9 9 4 6v12l5-3Z"></path><path d="M15 9l5-3v12l-5-3Z"></path><rect x="9" y="9" width="6" height="6" rx="1.5"></rect></svg>
+                      {:else if item.kind === "egg"}
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill={disp.iconColor}><path d="M12 2C7.5 8.5 5 13 5 16.5A7 7 0 0 0 19 16.5C19 13 16.5 8.5 12 2Z"></path></svg>
+                      {:else}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill={disp.iconColor}><path d="M12 2.5c.3 3.2 1 5.6 2.1 7.1 1.5 1.1 3.9 1.8 7.1 2.1-3.2.3-5.6 1-7.1 2.1-1.1 1.5-1.8 3.9-2.1 7.1-.3-3.2-1-5.6-2.1-7.1-1.5-1.1-3.9-1.8-7.1-2.1 3.2-.3 5.6-1 7.1-2.1 1.1-1.5 1.8-3.9 2.1-7.1Z"></path></svg>
+                      {/if}
+                    </div>
+                    <div class="shop-item-info">
+                      <span class="shop-item-name">{disp.name}</span>
+                      <div class="shop-price-row">
+                        <svg width="11" height="11" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2" fill="#E8B84B" stroke="#9C6B1F" stroke-width="1.3"></circle></svg>
+                        <span class="shop-price-val">{tokens(item.price)}</span>
+                        <span class="shop-price-unit">tokens</span>
+                      </div>
+                    </div>
+                    <button
+                      class="buy-action-btn"
+                      class:pk-shake={shakeItemId === itemKey}
+                      onclick={() => (item.kind === "egg" ? buyEgg(item.tier, item.price, item.canBuy) : buy(item.kind, item.price, item.canBuy))}
+                    >
+                      Buy
+                    </button>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        {#if currentTab === "pokedex"}
+          <div class="tab-pane">
+            <div class="pokedex-header-row">
+              <span class="panel-title">Discovered Pokémon</span>
+              <span class="dex-counter">{c.dex.length} Collected</span>
+            </div>
+            <div class="pokedex-2col-grid">
+              {#each c.dex as d (d.id)}
+                {@const typeInfo = getTypes(d.id)}
+                <div class="pokedex-card">
+                  <div class="card-top-stripe" style="background: {typeInfo.primary.text};"></div>
+                  {#if d.isRaising}
+                    <span class="active-tag">ACTIVE</span>
+                  {/if}
+                  <div class="dex-sprite-container">
+                    <img
+                      class="dex-sprite-img"
+                      src={spriteUrl(d.id, d.isShiny, true)}
+                      alt={d.name}
+                      onerror={(e) => fallbackStaticSprite(e, d.id, d.isShiny)}
+                      loading="lazy"
+                    />
+                  </div>
+                  <span class="dex-species-name">
+                    {d.name}
+                    {#if d.isShiny}<span class="shiny-star">✨</span>{/if}
+                  </span>
+                  <div class="dex-types-list">
+                    {#each typeInfo.list as t}
+                      <span class="dex-type-pill" style="background: {t.bg}; border: {t.border}; color: {t.text};">
+                        {t.name}
+                      </span>
+                    {/each}
+                  </div>
+                </div>
+              {/each}
+              {#each Array(Math.max(4, 8 - c.dex.length)) as _, i}
+                <div class="locked-slot-card">
+                  <div class="locked-silhouette-box">
+                    <span class="locked-question">?</span>
+                  </div>
+                  <span class="locked-label">???</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+      {:else if !loading}
+        <div class="empty-state-loading">
+          <div class="loading-spinner"></div>
+          <p class="loading-text">Connecting to token providers…</p>
+        </div>
+      {/if}
+    </main>
+    <div class="bottom-vignette"></div>
+  </div>
 </div>
 
 <style>
+  :global(*) {
+    box-sizing: border-box;
+    user-select: none;
+  }
+
   :global(html, body) {
     margin: 0;
     padding: 0;
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: transparent;
-    color-scheme: dark;
+    background: transparent !important;
+    background-color: transparent !important;
+    font-family: "Space Grotesk", sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
 
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
+  @keyframes pk-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  @keyframes pk-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @keyframes pk-shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
   }
 
-  /* Theme Foundations */
-  .app {
-    font-family: "Inter", system-ui, -apple-system, sans-serif;
-    color: #e6e6e6;
-    padding: 12px 14px;
-    height: 100vh;
-    overflow-y: auto;
-    overflow-x: hidden;
-    user-select: none;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
-    transition: background 0.3s ease, color 0.3s ease;
-  }
-
-  /* Midnight Glass Theme */
   .theme-midnight {
-    background: linear-gradient(180deg, #151922 0%, #0d1017 100%);
-    --card-bg: rgba(26, 32, 45, 0.7);
-    --card-border: rgba(255, 255, 255, 0.08);
-    --accent: #4f8cff;
-    --accent-glow: rgba(79, 140, 255, 0.3);
+    --bg-grad: linear-gradient(180deg, #111319, #0b0d12);
+    --border-color: rgba(255, 255, 255, 0.08);
+    --card-bg: rgba(255, 255, 255, 0.03);
+    --accent-red: #E3372E;
+    --accent-grad: linear-gradient(135deg, #E3372E, #B4241C);
   }
-
-  /* OLED Pitch Black Theme */
   .theme-oled {
-    background: #000000;
-    --card-bg: #0c0d10;
-    --card-border: #20222a;
-    --accent: #00ff88;
-    --accent-glow: rgba(0, 255, 136, 0.3);
+    --bg-grad: linear-gradient(180deg, #070707, #000000);
+    --border-color: rgba(255, 255, 255, 0.12);
+    --card-bg: rgba(255, 255, 255, 0.04);
+    --accent-red: #ff3333;
+    --accent-grad: linear-gradient(135deg, #ff3333, #aa0000);
   }
-
-  /* Cyberpunk Neon Theme */
   .theme-cyberpunk {
-    background: linear-gradient(180deg, #180d24 0%, #0d0615 100%);
-    --card-bg: rgba(36, 17, 54, 0.75);
-    --card-border: rgba(255, 0, 128, 0.25);
-    --accent: #ff007f;
-    --accent-glow: rgba(255, 0, 127, 0.4);
+    --bg-grad: linear-gradient(180deg, #0d0c1d, #05050f);
+    --border-color: rgba(0, 240, 255, 0.2);
+    --card-bg: rgba(0, 240, 255, 0.04);
+    --accent-red: #ff0055;
+    --accent-grad: linear-gradient(135deg, #ff0055, #7a00ff);
   }
-
-  /* Game Boy Retro Theme */
   .theme-retro {
-    background: #1f2a1a;
-    color: #9bbc0f;
-    --card-bg: #151e12;
-    --card-border: #304226;
-    --accent: #8bac0f;
-    --accent-glow: rgba(139, 172, 15, 0.3);
+    --bg-grad: linear-gradient(180deg, #1f2d1f, #0f1c0f);
+    --border-color: rgba(155, 187, 89, 0.25);
+    --card-bg: rgba(155, 187, 89, 0.06);
+    --accent-red: #9bbb59;
+    --accent-grad: linear-gradient(135deg, #9bbb59, #4f7324);
   }
 
-  /* Scrollbars */
-  .app::-webkit-scrollbar {
-    width: 5px;
+  .window-root {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    overflow: hidden;
   }
-  .app::-webkit-scrollbar-track {
+
+  .app-card {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-grad);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.65);
+    position: relative;
+  }
+
+  .app-header {
+    flex-shrink: 0;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px 0 14px;
+    background: rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    cursor: grab;
+  }
+  .app-header:active {
+    cursor: grabbing;
+  }
+
+  .header-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .pokeball-svg {
+    flex-shrink: 0;
+  }
+
+  .brand-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #F2F3F5;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+
+  .live-indicator {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #39D98A;
+    flex-shrink: 0;
+    animation: pk-pulse 2s ease-in-out infinite;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .window-btn {
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: #8B93A7;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .window-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+  }
+  .window-btn.active-action {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+  }
+  .window-btn.close-btn:hover {
+    background: #E5484D;
+    color: #ffffff;
+  }
+
+  .header-divider {
+    width: 1px;
+    height: 16px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 0 4px;
+  }
+
+  .spinning {
+    animation: pk-spin 0.6s linear infinite;
+  }
+
+  .nav-bar {
+    flex-shrink: 0;
+    height: 46px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    background: rgba(255, 255, 255, 0.015);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .tab-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 8px 4px;
+    border-radius: 9px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+    background: transparent;
+    color: #8B93A7;
+    border: none;
+  }
+  .tab-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #ffffff;
+  }
+  .tab-btn.active {
+    background: var(--accent-grad);
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(227, 55, 45, 0.35);
+  }
+
+  .tab-badge {
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22);
+    color: #ffffff;
+    font-size: 9px;
+    font-weight: 700;
+    font-family: "JetBrains Mono", monospace;
+  }
+
+  .content-scroll {
+    position: relative;
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .pk-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+  .pk-scroll::-webkit-scrollbar-track {
     background: transparent;
   }
-  .app::-webkit-scrollbar-thumb {
-    background: var(--card-border);
-    border-radius: 3px;
+  .pk-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+  }
+  .pk-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.22);
   }
 
-  /* Header */
-  header {
+  .bottom-vignette {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 20px;
+    background: linear-gradient(180deg, rgba(11, 13, 18, 0), #0b0d12);
+    pointer-events: none;
+  }
+
+  .tab-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: fadeIn 0.2s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(3px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .section-tag {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #5B6274;
+  }
+
+  .buddy-hero {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015));
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 16px;
+    padding: 16px;
+  }
+
+  .hero-glow {
+    position: absolute;
+    top: -50px;
+    right: -50px;
+    width: 170px;
+    height: 170px;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  .hero-header-row {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 12px;
-    cursor: grab;
-  }
-  header:active {
-    cursor: grabbing;
   }
 
-  .header-left {
+  .stage-pips {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: grab;
+    gap: 4px;
   }
-
-  .logo-group {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .dot {
-    width: 8px;
-    height: 8px;
+  .pip {
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
-    background: #ff5d5d;
-    transition: background 0.3s ease;
+    background: rgba(255, 255, 255, 0.15);
   }
-  .dot.ok {
-    background: #00e676;
-    box-shadow: 0 0 8px rgba(0, 230, 118, 0.5);
+  .pip.filled {
+    background: #E3372E;
   }
 
-  .title {
-    font-weight: 700;
-    font-size: 14px;
-    letter-spacing: -0.2px;
-  }
-
-  .header-right {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .icon-btn {
-    padding: 5px 8px;
-    font-size: 13px;
-    border-radius: 6px;
-    background: transparent;
-    border: 1px solid transparent;
-    color: #a0a8b8;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-  .icon-btn:hover {
-    background: var(--card-bg);
-    border-color: var(--card-border);
-    color: #ffffff;
-  }
-  .icon-btn.active-btn {
-    background: var(--accent);
-    color: #ffffff;
-    border-color: var(--accent);
-  }
-
-  .close-btn:hover {
-    background: rgba(255, 75, 75, 0.2);
-    border-color: #ff4b4b;
-    color: #ff8888;
-  }
-
-  .spinning {
-    display: inline-block;
-    animation: spin 1s linear infinite;
-  }
-  @keyframes spin {
-    100% {
-      transform: rotate(360deg);
-    }
-  }
-
-  /* Navigation Tabs */
-  .nav-tabs {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 4px;
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
-    padding: 3px;
-    margin-bottom: 12px;
-  }
-
-  .tab-btn {
+  .hero-body {
     position: relative;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+  }
+
+  .sprite-box {
+    width: 84px;
+    height: 84px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    padding: 6px 4px;
-    background: transparent;
-    border: none;
-    border-radius: 8px;
-    color: #8b95a8;
-    font-size: 11px;
+    overflow: hidden;
+  }
+
+  .hero-sprite {
+    max-width: 76px;
+    max-height: 76px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    image-rendering: pixelated;
+    filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
+  }
+
+  .egg-sprite {
+    font-size: 46px;
+    filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
+    animation: pk-shake 3s infinite ease-in-out;
+  }
+
+  .hero-details {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mon-name {
+    font-size: 19px;
+    font-weight: 700;
+    color: #F2F3F5;
+  }
+  .shiny-star {
+    font-size: 14px;
+    margin-left: 2px;
+  }
+
+  .rarity-badge {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #8B93A7;
+    font-size: 9.5px;
     font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
+    letter-spacing: 0.03em;
   }
 
-  .tab-btn:hover {
-    color: #e6e6e6;
+  .types-row {
+    display: flex;
+    gap: 6px;
+  }
+  .type-pill {
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .egg-pill {
+    background: rgba(232, 184, 75, 0.14);
+    border: 1px solid rgba(232, 184, 75, 0.35);
+    color: #E8B84B;
   }
 
-  .tab-btn.active {
-    background: var(--accent);
-    color: #ffffff;
-    box-shadow: 0 2px 8px var(--accent-glow);
+  .stage-row {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2px;
+  }
+  .stage-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #8B93A7;
+  }
+  .stage-pct {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #F2F3F5;
+    font-family: "JetBrains Mono", monospace;
   }
 
-  .badge-count {
+  .progress-container {
+    position: relative;
+    margin-top: 12px;
+  }
+  .progress-track {
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.3s ease;
+  }
+  .egg-gradient {
+    background: linear-gradient(90deg, #E8B84B, #FF8A59);
+  }
+  .progress-sub {
+    margin-top: 6px;
+    font-size: 10.5px;
+    font-family: "JetBrains Mono", monospace;
+    color: #5B6274;
+  }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+
+  .metric-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 12px;
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .metric-icon {
+    flex-shrink: 0;
+  }
+  .metric-val {
+    font-size: 16px;
+    font-weight: 700;
+    color: #F2F3F5;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .metric-lbl {
     font-size: 9px;
-    padding: 1px 5px;
-    border-radius: 10px;
-    background: rgba(0, 0, 0, 0.4);
-    color: #ffffff;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: #5B6274;
   }
 
-  .tab-content {
+  .pace-card.hot {
+    background: rgba(255, 138, 89, 0.08);
+    border-color: rgba(255, 138, 89, 0.25);
+  }
+
+  .quick-items-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .quick-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .quick-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    color: #F2F3F5;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .quick-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.16);
+  }
+  .quick-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .panel-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 14px;
+    padding: 14px;
+  }
+  .panel-title {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #F2F3F5;
+  }
+  .panel-title-red {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #FF8178;
+    margin-bottom: 12px;
+  }
+
+  .tool-bar {
+    display: flex;
+    height: 9px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.07);
+    gap: 2px;
+    margin-bottom: 14px;
+  }
+  .tool-bar-seg {
+    height: 100%;
+    transition: width 0.3s ease;
+  }
+  .tools-list {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    animation: fadeIn 0.2s ease;
   }
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(3px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+  .tool-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .tool-name-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .tool-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .tool-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #F2F3F5;
+  }
+  .tool-val-group {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+  }
+  .tool-val {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #F2F3F5;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .tool-sub {
+    font-size: 10px;
+    color: #5B6274;
   }
 
-  /* Celebration Banner */
-  .celebration-banner {
+  .limits-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .plan-pill {
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: rgba(91, 140, 255, 0.15);
+    border: 1px solid rgba(91, 140, 255, 0.35);
+    color: #5B8CFF;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .limit-block {
+    margin-top: 10px;
+  }
+  .limit-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #8B93A7;
+    margin-bottom: 5px;
+  }
+  .limit-pct {
+    font-weight: 700;
+    color: #F2F3F5;
+  }
+  .limit-track {
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+  }
+  .limit-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #5B8CFF, #39D98A);
+    border-radius: 999px;
+  }
+
+  .wallet-card {
     position: relative;
+    overflow: hidden;
+    border-radius: 16px;
+    padding: 18px;
+    background: radial-gradient(circle at 20% 15%, rgba(227, 55, 45, 0.16), transparent 60%), #12141b;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .wallet-watermark {
+    position: absolute;
+    right: -18px;
+    bottom: -18px;
+    opacity: 0.05;
+  }
+  .wallet-content {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .wallet-coin {
+    flex-shrink: 0;
+  }
+  .wallet-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .wallet-amount {
+    font-size: 24px;
+    font-weight: 700;
+    color: #F2F3F5;
+    font-family: "JetBrains Mono", monospace;
+    line-height: 1;
+  }
+  .wallet-label {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    color: #8B93A7;
+  }
+
+  .bag-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .bag-count-badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: #5B6274;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .bag-list {
+    display: flex;
+    flex-direction: column;
+    margin-top: 8px;
+  }
+  .bag-item-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .item-tile {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .bag-item-name {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 600;
+    color: #F2F3F5;
+  }
+  .bag-item-qty {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #8B93A7;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .empty-bag-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 20px 0 6px;
+  }
+  .empty-bag-text {
+    font-size: 11.5px;
+    color: #5B6274;
+    text-align: center;
+  }
+
+  .shop-header {
+    margin-bottom: 6px;
+  }
+  .shop-sub {
+    font-size: 10.5px;
+    color: #5B6274;
+    display: block;
+    margin-top: 2px;
+  }
+  .shop-items-list {
+    display: flex;
+    flex-direction: column;
+  }
+  .shop-item-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .shop-item-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .shop-item-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #F2F3F5;
+  }
+  .shop-price-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .shop-price-val {
+    font-size: 11px;
+    font-weight: 600;
+    color: #8B93A7;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .shop-price-unit {
+    font-size: 10px;
+    color: #5B6274;
+  }
+  .buy-action-btn {
+    flex-shrink: 0;
+    padding: 6px 14px;
+    border-radius: 8px;
+    background: rgba(227, 55, 45, 0.14);
+    border: 1px solid rgba(227, 55, 45, 0.4);
+    color: #FF8178;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .buy-action-btn:hover {
+    background: #E3372E;
+    color: #ffffff;
+  }
+  .pk-shake {
+    animation: pk-shake 0.35s ease;
+  }
+
+  .pokedex-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .dex-counter {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #5B6274;
+  }
+  .pokedex-2col-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .pokedex-card {
+    position: relative;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 14px;
+    padding: 16px 10px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    text-align: center;
+    min-height: 148px;
+  }
+  .card-top-stripe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+  }
+  .active-tag {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #E3372E;
+    color: #ffffff;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .dex-sprite-container {
+    width: 72px;
+    height: 72px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 4px;
+    overflow: hidden;
+  }
+  .dex-sprite-img {
+    max-width: 68px;
+    max-height: 68px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    image-rendering: pixelated;
+    filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4));
+  }
+  .dex-species-name {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #F2F3F5;
+    margin-top: 2px;
+  }
+  .dex-types-list {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+  }
+  .dex-type-pill {
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 700;
+  }
+
+  .locked-slot-card {
+    background: rgba(255, 255, 255, 0.015);
+    border: 1.5px dashed rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    padding: 16px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 148px;
+  }
+  .locked-silhouette-box {
+    width: 72px;
+    height: 72px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .locked-question {
+    font-size: 26px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.13);
+  }
+  .locked-label {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.2);
+    letter-spacing: 0.04em;
+  }
+
+  .celebration-banner {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1133,28 +1940,16 @@
     background: linear-gradient(90deg, #ff8a00, #e52e71);
     color: white;
     border-radius: 10px;
-    margin-bottom: 10px;
     font-size: 12px;
     box-shadow: 0 4px 14px rgba(229, 46, 113, 0.4);
-    animation: bounceIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   }
-  @keyframes bounceIn {
-    0% {
-      opacity: 0;
-      transform: scale(0.9);
-    }
-    100% {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-  .celebration-sparkles {
+  .celebration-icon {
     font-size: 16px;
   }
-  .celebration-content {
+  .celebration-text {
     flex: 1;
   }
-  .close-celebration {
+  .celebration-close {
     background: transparent;
     border: none;
     color: white;
@@ -1162,792 +1957,203 @@
     cursor: pointer;
     opacity: 0.8;
   }
-  .close-celebration:hover {
+  .celebration-close:hover {
     opacity: 1;
   }
 
-  /* Companion Hero Card */
-  .companion-hero {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 12px;
-    padding: 14px 16px;
-    backdrop-filter: blur(12px);
-  }
-
-  .hero-left {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 96px;
-    height: 96px;
-    flex-shrink: 0;
-  }
-
-  .sprite {
-    max-width: 92px;
-    max-height: 92px;
-    width: auto;
-    height: auto;
-    object-fit: contain;
-    image-rendering: pixelated;
-    filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.5));
-  }
-
-  .egg-anim {
-    font-size: 56px;
-    animation: eggWobble 2s infinite ease-in-out;
-  }
-  @keyframes eggWobble {
-    0%, 100% {
-      transform: rotate(0deg);
-    }
-    25% {
-      transform: rotate(-6deg);
-    }
-    75% {
-      transform: rotate(6deg);
-    }
-  }
-
-  .mon-anim {
-    animation: idleFloat 3s infinite ease-in-out;
-  }
-  @keyframes idleFloat {
-    0%, 100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-4px);
-    }
-  }
-
-  .hero-right {
-    flex: 1;
+  .settings-container {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-  }
-
-  .hero-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-  }
-
-  .hero-header h2 {
-    font-size: 16px;
-    font-weight: 700;
-  }
-
-  .shiny-star {
-    font-size: 13px;
-    margin-left: 2px;
-  }
-
-  .pill-group {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .type-pill {
-    font-size: 10px;
-    font-weight: 700;
-    padding: 2px 6px;
-    border-radius: 6px;
-    color: #ffffff;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-  }
-
-  .rarity-pill {
-    font-size: 10px;
-    font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.1);
-    color: #b0bac9;
-  }
-  .rarity-pill.rare,
-  .rarity-pill.legendary {
-    background: rgba(255, 215, 0, 0.2);
-    color: #ffd700;
-    border: 1px solid rgba(255, 215, 0, 0.4);
-  }
-
-  .sub {
-    font-size: 11px;
-    color: #8893a7;
-  }
-
-  .progress-wrap {
-    margin-top: 6px;
-  }
-
-  .bar {
-    height: 7px;
-    background: rgba(0, 0, 0, 0.35);
-    border-radius: 999px;
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-  }
-
-  .fill {
-    height: 100%;
-    border-radius: 999px;
-    transition: width 0.4s ease;
-  }
-  .mon-fill {
-    background: linear-gradient(90deg, #4f8cff, #00d2b4);
-  }
-  .egg-fill {
-    background: linear-gradient(90deg, #f59e0b, #ef4444);
-  }
-  .limit-fill {
-    background: linear-gradient(90deg, #10b981, #f59e0b);
-  }
-
-  .progress-labels {
-    display: flex;
-    justify-content: space-between;
-    font-size: 10px;
-    color: #8893a7;
-    margin-top: 4px;
-    font-weight: 500;
-  }
-
-  .max-badge {
-    color: #ffd700;
-    font-weight: 600;
-  }
-  .maxed-notice {
-    font-size: 11px;
-    color: #ffd700;
-    margin-top: 6px;
-    font-weight: 600;
-  }
-
-  /* Metrics Grid */
-  .metrics-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-  }
-
-  .metric-card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
-    padding: 10px 8px;
-    text-align: center;
-  }
-
-  .metric-val {
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: -0.3px;
-  }
-  .metric-lbl {
-    font-size: 10px;
-    color: #7b8599;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-    margin-top: 2px;
-  }
-
-  .burn-idle {
-    color: #7b8599;
-  }
-  .burn-normal {
-    color: #00e676;
-  }
-  .burn-fast {
-    color: #ffb300;
-  }
-  .burn-blazing {
-    color: #ff3d00;
-    text-shadow: 0 0 8px rgba(255, 61, 0, 0.4);
-  }
-
-  /* Quick Actions Card */
-  .quick-actions-card {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
-    padding: 10px 12px;
-  }
-
-  .card-title {
-    font-size: 11px;
-    font-weight: 700;
-    color: #7b8599;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 8px;
-  }
-
-  .actions-row {
-    display: flex;
-    gap: 8px;
-  }
-
-  .item-btn {
-    flex: 1;
-    padding: 7px 10px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--card-border);
-    border-radius: 8px;
-    color: #e6e6e6;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-  .item-btn:hover {
-    background: var(--accent);
-    color: #ffffff;
-    border-color: var(--accent);
-  }
-
-  /* Provider Ratio Section */
-  .provider-section {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
-    padding: 12px;
-  }
-
-  .section-title {
-    font-size: 12px;
-    font-weight: 700;
-    margin-bottom: 8px;
-  }
-
-  .ratio-bar {
-    display: flex;
-    height: 8px;
-    border-radius: 4px;
-    overflow: hidden;
-    margin-bottom: 10px;
-    background: rgba(0, 0, 0, 0.3);
-  }
-
-  .ratio-segment {
-    height: 100%;
-    transition: width 0.3s ease;
-  }
-
-  .sources-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .source-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 12px;
-  }
-
-  .source-info {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .source-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-  }
-
-  .token-num {
-    font-weight: 700;
-  }
-
-  .token-sub {
-    font-size: 10px;
-    color: #7b8599;
-    margin-left: 3px;
-  }
-
-  /* Limits Card */
-  .limits-card {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
-    padding: 12px;
-  }
-
-  .limits-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
-  }
-
-  .limits-title-group {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .limits-title-group h3 {
-    font-size: 13px;
-    font-weight: 700;
-  }
-
-  .plan-badge {
-    font-size: 10px;
-    font-weight: 700;
-    padding: 2px 7px;
-    border-radius: 6px;
-    background: rgba(79, 140, 255, 0.2);
-    color: #72a7ff;
-    border: 1px solid rgba(79, 140, 255, 0.4);
-  }
-
-  .limit-row {
-    margin-top: 8px;
-  }
-
-  .limit-labels {
-    display: flex;
-    justify-content: space-between;
-    font-size: 11px;
-    color: #8893a7;
-    margin-bottom: 4px;
-  }
-  .limit-pct {
-    font-weight: 700;
-    color: #e6e6e6;
-  }
-
-  /* Balance Card */
-  .balance-card {
-    display: flex;
-    align-items: center;
-    background: linear-gradient(90deg, rgba(79, 140, 255, 0.15), rgba(0, 210, 180, 0.15));
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
-    padding: 12px 14px;
-  }
-
-  .balance-left {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .coin-icon {
-    font-size: 24px;
-  }
-
-  .balance-text {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .balance-num {
-    font-size: 17px;
-    font-weight: 800;
-    color: #ffffff;
-  }
-
-  .balance-lbl {
-    font-size: 10px;
-    color: #8893a7;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-  }
-
-  /* Bag Grid */
-  .inventory-section,
-  .shop-section {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
-    padding: 12px;
-  }
-
-  .empty-bag {
-    padding: 8px 0;
-  }
-
-  .bag-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-  }
-
-  .bag-card {
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid var(--card-border);
-    border-radius: 8px;
-    padding: 8px 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .bag-header {
-    display: flex;
-    justify-content: space-between;
-    font-size: 12px;
-    font-weight: 700;
-  }
-
-  .item-count {
-    color: var(--accent);
-  }
-
-  .item-desc {
-    font-size: 10px;
-    color: #7b8599;
-    line-height: 1.3;
-    margin-bottom: 4px;
-  }
-
-  /* Shop List */
-  .shop-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .shop-card {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid var(--card-border);
-    border-radius: 8px;
-    padding: 8px 10px;
-  }
-
-  .shop-item-name {
-    font-size: 12px;
-    font-weight: 600;
-  }
-
-  .shop-item-price {
-    font-size: 11px;
-    color: #ffd700;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    gap: 3px;
-  }
-
-  .buy-btn {
-    padding: 5px 12px;
-    background: var(--accent);
-    border: none;
-    border-radius: 6px;
-    color: #ffffff;
-    font-size: 11px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: opacity 0.2s ease;
-  }
-  .buy-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  /* Pokédex Grid */
-  .pokedex-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 2px;
-  }
-
-  .dex-counter {
-    font-size: 11px;
-    font-weight: 600;
-    color: #7b8599;
-  }
-
-  .pokedex-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-  }
-
-  .dex-card {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 12px;
-    padding: 12px 8px 10px;
-    text-align: center;
-    min-height: 124px;
-    transition: transform 0.15s ease, border-color 0.15s ease;
-  }
-  .dex-card:hover {
-    transform: translateY(-2px);
-    border-color: var(--accent);
-  }
-
-  .dex-card.active-buddy {
-    border-color: var(--accent);
-    box-shadow: 0 0 12px var(--accent-glow);
-  }
-
-  .active-badge {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    font-size: 8px;
-    font-weight: 800;
-    padding: 2px 5px;
-    border-radius: 4px;
-    background: var(--accent);
-    color: white;
-  }
-
-  .dex-sprite {
-    max-width: 76px;
-    max-height: 76px;
-    width: auto;
-    height: auto;
-    object-fit: contain;
-    image-rendering: pixelated;
-    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
-  }
-
-  .dex-info {
-    margin-top: 4px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-  }
-
-  .dex-name {
-    font-size: 11px;
-    font-weight: 700;
-  }
-
-  .type-mini-pill {
-    font-size: 9px;
-    font-weight: 700;
-    padding: 1px 5px;
-    border-radius: 4px;
-    color: white;
-  }
-
-  /* Settings View */
-  .settings-view {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    gap: 12px;
     animation: fadeIn 0.2s ease;
   }
-
   .settings-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
   }
-
-  .settings-header h3 {
+  .settings-title {
     font-size: 14px;
     font-weight: 700;
+    color: #F2F3F5;
   }
-
   .back-btn {
-    font-size: 11px;
-    padding: 4px 8px;
+    padding: 4px 12px;
     border-radius: 6px;
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    color: #e6e6e6;
-    cursor: pointer;
-  }
-
-  .settings-group {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
-    padding: 10px 12px;
-  }
-
-  .settings-group h4 {
-    font-size: 10px;
-    font-weight: 700;
-    color: #7b8599;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 8px;
-  }
-
-  .theme-picker {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 6px;
-  }
-
-  .theme-chip {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid var(--card-border);
-    border-radius: 6px;
-    color: #e6e6e6;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #F2F3F5;
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.15s ease;
   }
-  .theme-chip.active {
-    border-color: var(--accent);
-    background: rgba(79, 140, 255, 0.15);
-  }
-
-  .theme-preview {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-  }
-  .theme-preview.midnight {
-    background: #4f8cff;
-  }
-  .theme-preview.oled {
-    background: #00ff88;
-  }
-  .theme-preview.cyberpunk {
-    background: #ff007f;
-  }
-  .theme-preview.retro {
-    background: #8bac0f;
-  }
-
-  .settings-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-  }
-  .settings-row:last-child {
-    border-bottom: none;
-  }
-
-  .setting-info {
+  .settings-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 14px;
+    padding: 6px 14px;
     display: flex;
     flex-direction: column;
   }
-
-  .setting-title {
-    font-size: 12px;
-    font-weight: 600;
+  .setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   }
-
-  .setting-desc {
-    font-size: 10px;
-    color: #7b8599;
+  .setting-row:last-child {
+    border-bottom: none;
   }
-
-  .custom-select {
-    background: rgba(0, 0, 0, 0.3);
-    color: #e6e6e6;
-    border: 1px solid var(--card-border);
-    border-radius: 6px;
-    padding: 4px 6px;
-    font-size: 11px;
-    outline: none;
+  .setting-row.theme-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
   }
-
-  .about-card {
+  .setting-text {
     display: flex;
     flex-direction: column;
     gap: 2px;
   }
-
-  .about-title {
+  .setting-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #F2F3F5;
+  }
+  .setting-sub {
+    font-size: 10.5px;
+    color: #5B6274;
+  }
+  .toggle-switch {
+    width: 38px;
+    height: 22px;
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.12);
+    border: none;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+  .toggle-switch.active {
+    background: #E3372E;
+  }
+  .toggle-handle {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    transition: transform 0.2s ease;
+  }
+  .toggle-switch.active .toggle-handle {
+    transform: translateX(16px);
+  }
+  .action-btn {
+    padding: 5px 12px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #F2F3F5;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .pill-options {
     display: flex;
-    align-items: center;
+    gap: 4px;
+  }
+  .pill-choice {
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #8B93A7;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .pill-choice.selected {
+    background: #E3372E;
+    color: #ffffff;
+    border-color: #E3372E;
+  }
+  .theme-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 6px;
-    font-size: 12px;
-    font-weight: 700;
+    width: 100%;
+  }
+  .theme-choice {
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #8B93A7;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+  }
+  .theme-choice.selected {
+    border-color: #E3372E;
+    color: #ffffff;
+    background: rgba(227, 55, 45, 0.15);
   }
 
-  .version-tag {
-    font-size: 10px;
-    padding: 1px 5px;
-    border-radius: 4px;
-    background: rgba(79, 140, 255, 0.2);
-    color: #72a7ff;
+  .about-box {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 12px 14px;
   }
-
-  .empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 24px 12px;
-    text-align: center;
-    gap: 6px;
-  }
-  .empty-icon {
-    font-size: 32px;
-  }
-
-  .error-banner {
+  .about-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: rgba(255, 93, 93, 0.15);
-    border: 1px solid #ff5d5d;
-    color: #ff9999;
-    padding: 6px 10px;
-    border-radius: 8px;
-    font-size: 11px;
-    margin-bottom: 8px;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #F2F3F5;
   }
-
-  .small-btn {
-    padding: 4px 8px;
-    font-size: 11px;
-    border-radius: 6px;
+  .version-tag {
+    font-size: 10px;
+    font-family: "JetBrains Mono", monospace;
+    padding: 2px 6px;
+    border-radius: 4px;
     background: rgba(255, 255, 255, 0.08);
-    border: 1px solid var(--card-border);
-    color: #e6e6e6;
-    cursor: pointer;
+    color: #8B93A7;
+  }
+  .about-sub {
+    margin: 6px 0 0;
+    font-size: 11px;
+    color: #5B6274;
   }
 
-  .loading-state {
+  .empty-state-loading {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 48px 0;
+    min-height: 240px;
     gap: 12px;
   }
-
   .loading-spinner {
-    width: 24px;
-    height: 24px;
-    border: 2px solid rgba(255, 255, 255, 0.15);
-    border-top-color: var(--accent);
+    width: 28px;
+    height: 28px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-top-color: #E3372E;
     border-radius: 50%;
-    animation: spin 0.8s linear infinite;
+    animation: pk-spin 0.8s linear infinite;
+  }
+  .loading-text {
+    font-size: 12px;
+    color: #5B6274;
+    margin: 0;
+  }
+  .empty-hint {
+    font-size: 11.5px;
+    color: #5B6274;
+    margin: 0;
   }
 </style>
