@@ -10,6 +10,7 @@ PokeTokenBar is a cross-platform port of [chattymin/PokeTokenBar](https://github
 
 - **Status**: **v0.3.0 Feature Complete & Verified on Windows and Linux**.
   - All 10 AI usage providers active (Claude Code, Codex, Gemini CLI, Grok CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Copilot CLI, Kiro CLI).
+  - *Live Testing Scope*: Verified end-to-end with **Antigravity / `agy` (Gemini CLI)** and **Claude Code**. The other 8 providers are tested against the comprehensive 330+ unit test suite with upstream fixtures.
   - Modern UI redesign matching Claude Design specifications.
   - Transparent floating desktop pet companion HUD with circular perimeter progress ring.
   - Zero-freeze async provider log scanning.

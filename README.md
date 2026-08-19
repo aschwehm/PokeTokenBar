@@ -11,6 +11,12 @@ PokeTokenBar is a lightweight, cross-platform desktop application built with **T
 > - **Zero-Freeze Async Engine**: Provider log scans decoupled from UI state locks (< 0.01 ms mutex duration).
 > - **333 passing unit tests**. See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md).
 
+> [!IMPORTANT]
+> **Provider Testing & Verification Status**:
+> Live end-to-end testing has currently only been verified with **Antigravity / `agy` (the new Gemini CLI)** and **Claude Code** (as these are the tools available in our testing environment).
+>
+> Parsers for all other 8 providers (Codex, Grok CLI, OpenCode, Hermes Agent, Cursor, Copilot CLI, Kiro CLI, legacy Gemini) are implemented and validated against the original Swift reference test suite fixtures (330+ unit tests), but **live testing from the community is actively welcome**! If you encounter any path or format differences, please open an issue on GitHub.
+
 ---
 
 ## 🌟 Key Features

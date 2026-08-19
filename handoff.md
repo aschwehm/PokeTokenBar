@@ -47,3 +47,5 @@ docs/                 architecture.md, roadmap.md
 ## Providers working (10 of 10):
 Claude Code, Codex, Gemini CLI, Grok CLI, Antigravity CLI, OpenCode, Hermes Agent, Cursor, Copilot CLI, Kiro CLI.
 
+> **Note on live testing**: Real-world live testing has been conducted with **Antigravity / `agy` (Gemini CLI)** and **Claude Code**. The other 8 providers are validated against 330+ ported unit test fixtures. Community testing for additional providers is welcome!
+
