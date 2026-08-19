@@ -189,6 +189,15 @@ pub struct Record {
 }
 
 pub fn parse_generation_metadata(blob: &[u8], conversation: &str, index: i64) -> Record {
+    parse_generation_metadata_with_fallback(blob, conversation, index, None)
+}
+
+pub fn parse_generation_metadata_with_fallback(
+    blob: &[u8],
+    conversation: &str,
+    index: i64,
+    fallback_date: Option<DateTime<Utc>>,
+) -> Record {
     let chat_model = match proto::message(blob, 1) {
         Some(m) => m,
         None => {
@@ -207,7 +216,7 @@ pub fn parse_generation_metadata(blob: &[u8], conversation: &str, index: i64) ->
             }
         }
     };
-    let date = match created_at(chat_model) {
+    let date = match created_at(chat_model).or(fallback_date) {
         Some(d) => d,
         None => {
             return Record {
@@ -312,6 +321,33 @@ pub fn conversation_entries(database: &Path) -> ConversationRead {
         None => return ConversationRead::Unreadable { status: None },
     };
 
+    let file_mtime = fs::metadata(database)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .map(DateTime::<Utc>::from);
+
+    let mut step_timestamps = HashMap::new();
+    if let Ok(mut step_stmt) = conn.prepare("SELECT idx, metadata FROM steps WHERE metadata IS NOT NULL") {
+        if let Ok(mut step_rows) = step_stmt.query([]) {
+            while let Ok(Some(row)) = step_rows.next() {
+                let idx: i64 = row.get(0).unwrap_or(0);
+                if let Ok(blob) = row.get::<_, Vec<u8>>(1) {
+                    if let Some(stamp) = proto::message(&blob, 1) {
+                        let sec = proto::varint(stamp, 1);
+                        let nano = proto::varint(stamp, 2);
+                        if let Some(s) = sec {
+                            if (1_000_000_000..=4_102_444_800).contains(&s) {
+                                if let Some(dt) = DateTime::from_timestamp(s as i64, nano.unwrap_or(0) as u32) {
+                                    step_timestamps.insert(idx, dt);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let mut stmt = match conn.prepare("SELECT idx, data FROM gen_metadata WHERE data IS NOT NULL") {
         Ok(s) => s,
         Err(e) => {
@@ -339,7 +375,8 @@ pub fn conversation_entries(database: &Path) -> ConversationRead {
                 let idx: i64 = row.get(0).unwrap_or(0);
                 if let Ok(blob) = row.get::<_, Vec<u8>>(1) {
                     if !blob.is_empty() {
-                        let record = parse_generation_metadata(&blob, conversation, idx);
+                        let fallback = step_timestamps.get(&idx).copied().or(file_mtime);
+                        let record = parse_generation_metadata_with_fallback(&blob, conversation, idx, fallback);
                         discarded_counters += record.discarded_counters;
                         if let Some(entry) = record.entry {
                             entries.push(entry);

@@ -515,3 +515,17 @@ fn parse_item_kind(s: &str) -> Option<ItemKind> {
 fn parse_rarity(s: &str) -> Option<Rarity> {
     Rarity::from_raw(s)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_state_inner_refresh() {
+        let mut state = StateInner::new();
+        state.refresh();
+        for snap in &state.usage.snapshots {
+            println!("Provider found: {} -> tokens today: {:?}", snap.display_name, snap.today.as_ref().map(|t| t.total_tokens));
+        }
+    }
+}
