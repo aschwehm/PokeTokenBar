@@ -360,7 +360,10 @@ pub async fn refresh(
             usage.apply_snapshots(snapshots, companion);
 
             let celebration = if inner.companion.celebration_seq > prev_seq {
-                inner.companion.celebration.map(|c| (c, inner.companion.display_name()))
+                inner
+                    .companion
+                    .celebration
+                    .map(|c| (c, inner.companion.display_name()))
             } else {
                 None
             };
