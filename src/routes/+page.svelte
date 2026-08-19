@@ -213,6 +213,16 @@
     return n.toLocaleString("en-US");
   }
 
+  function formatUtilization(val: number): string {
+    const pct = val <= 1.0 && val > 0 ? val * 100 : val;
+    return `${pct.toFixed(0)}%`;
+  }
+
+  function getUtilizationPercent(val: number): string {
+    const pct = val <= 1.0 && val > 0 ? val * 100 : val;
+    return Math.min(100, Math.max(0, pct)).toFixed(1);
+  }
+
   function spriteUrl(id: number, shiny: boolean): string {
     const key = `${id}_${shiny}`;
     if (spriteCache[key]) return spriteCache[key];
@@ -349,18 +359,18 @@
           <div class="limit-row">
             <div class="limit-labels">
               <span>5-hour session</span>
-              <span>{(u.limits.fiveHour.utilization * 100).toFixed(0)}%</span>
+              <span>{formatUtilization(u.limits.fiveHour.utilization)}</span>
             </div>
-            <div class="bar"><div class="fill limit-fill" style="width: {Math.min(100, u.limits.fiveHour.utilization * 100).toFixed(1)}%"></div></div>
+            <div class="bar"><div class="fill limit-fill" style="width: {getUtilizationPercent(u.limits.fiveHour.utilization)}%"></div></div>
           </div>
         {/if}
         {#if u.limits.sevenDay && u.limits.sevenDay.utilization != null}
           <div class="limit-row">
             <div class="limit-labels">
               <span>Weekly limit</span>
-              <span>{(u.limits.sevenDay.utilization * 100).toFixed(0)}%</span>
+              <span>{formatUtilization(u.limits.sevenDay.utilization)}</span>
             </div>
-            <div class="bar"><div class="fill limit-fill" style="width: {Math.min(100, u.limits.sevenDay.utilization * 100).toFixed(1)}%"></div></div>
+            <div class="bar"><div class="fill limit-fill" style="width: {getUtilizationPercent(u.limits.sevenDay.utilization)}%"></div></div>
           </div>
         {/if}
       </section>
