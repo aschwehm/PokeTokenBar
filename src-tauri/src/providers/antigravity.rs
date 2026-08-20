@@ -192,13 +192,47 @@ pub fn parse_generation_metadata(blob: &[u8], conversation: &str, index: i64) ->
     parse_generation_metadata_with_fallback(blob, conversation, index, None)
 }
 
+pub fn extract_last_step_index(chat_model: &[u8]) -> Option<i64> {
+    let mut found = None;
+    proto::walk(chat_model, |f, _, p| {
+        if f == 20 {
+            if let Some(pair_blob) = p {
+                let mut key = None;
+                let mut val = None;
+                proto::walk(pair_blob, |pf, _, pp| {
+                    if let Some(str_bytes) = pp {
+                        if let Ok(s) = std::str::from_utf8(str_bytes) {
+                            if pf == 1 {
+                                key = Some(s.trim().to_string());
+                            } else if pf == 2 {
+                                val = Some(s.trim().to_string());
+                            }
+                        }
+                    }
+                    true
+                });
+                if key.as_deref() == Some("last_step_index") {
+                    if let Some(v) = val {
+                        if let Ok(idx) = v.parse::<i64>() {
+                            found = Some(idx);
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        true
+    });
+    found
+}
+
 pub fn parse_generation_metadata_with_fallback(
     blob: &[u8],
     conversation: &str,
     index: i64,
     fallback_date: Option<DateTime<Utc>>,
 ) -> Record {
-    let chat_model = match proto::message(blob, 1) {
+    let chat_model = match proto::message(blob, 1).or_else(|| proto::message(blob, 2)) {
         Some(m) => m,
         None => {
             return Record {
@@ -379,7 +413,12 @@ pub fn conversation_entries(database: &Path) -> ConversationRead {
                 let idx: i64 = row.get(0).unwrap_or(0);
                 if let Ok(blob) = row.get::<_, Vec<u8>>(1) {
                     if !blob.is_empty() {
-                        let fallback = step_timestamps.get(&idx).copied().or(file_mtime);
+                        let chat_model_opt = proto::message(&blob, 1).or_else(|| proto::message(&blob, 2));
+                        let last_step_opt = chat_model_opt.and_then(extract_last_step_index);
+                        let fallback = last_step_opt
+                            .and_then(|s_idx| step_timestamps.get(&s_idx).copied())
+                            .or_else(|| step_timestamps.get(&idx).copied())
+                            .or(file_mtime);
                         let record = parse_generation_metadata_with_fallback(
                             &blob,
                             conversation,
@@ -993,5 +1032,73 @@ mod tests {
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("conversation=c1"));
         assert!(lines[0].contains("reason=unreadable"));
+    }
+
+    #[test]
+    fn test_parse_legacy_field2_format() {
+        let blob = build_test_blob(
+            Some("legacy-1"),
+            "gemini-3.7-flash",
+            1772618400,
+            0,
+            1200,
+            300,
+            4000,
+            0,
+        );
+        let rec = parse_generation_metadata(&blob, "c1", 0);
+        let entry = rec.entry.expect("entry present");
+        assert_eq!(entry.id, "antigravity|legacy-1");
+        assert_eq!(entry.model, "antigravity/gemini-3.7-flash");
+        assert_eq!(entry.total(), 5500);
+    }
+
+    #[test]
+    fn test_parse_modern_cortex_format_with_last_step_index() {
+        let mut usage = Vec::new();
+        usage.extend(encode_field_varint(2, 5000)); // input
+        usage.extend(encode_field_varint(3, 1000)); // output
+        usage.extend(encode_field_varint(5, 200000)); // cache read
+        usage.extend(encode_field_str(11, "modern-resp-1"));
+
+        let mut step_pair = Vec::new();
+        step_pair.extend(encode_field_str(1, "last_step_index"));
+        step_pair.extend(encode_field_str(2, "42"));
+
+        let mut chat_model = Vec::new();
+        chat_model.extend(encode_field_bytes(4, &usage));
+        chat_model.extend(encode_field_str(19, "gemini-3.7-flash"));
+        chat_model.extend(encode_field_bytes(20, &step_pair));
+
+        // Modern cortex puts chat_model in field 1
+        let mut root = Vec::new();
+        root.extend(encode_field_bytes(1, &chat_model));
+
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("c_modern.db");
+        let conn = Connection::open(&db_path).expect("open test db");
+        conn.execute("CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);", []).unwrap();
+        conn.execute("CREATE TABLE steps (idx INTEGER PRIMARY KEY, metadata BLOB);", []).unwrap();
+
+        // Insert step 42 with timestamp for 2026-08-20
+        let mut step_stamp = Vec::new();
+        step_stamp.extend(encode_field_varint(1, 1787140000));
+        let mut step_meta = Vec::new();
+        step_meta.extend(encode_field_bytes(1, &step_stamp));
+        conn.execute("INSERT INTO steps (idx, metadata) VALUES (42, ?1);", rusqlite::params![step_meta]).unwrap();
+
+        // Insert gen_metadata with idx 0
+        conn.execute("INSERT INTO gen_metadata (idx, data) VALUES (0, ?1);", rusqlite::params![root]).unwrap();
+
+        let read = conversation_entries(&db_path);
+        let entries = match read {
+            ConversationRead::Complete { entries, .. } => entries,
+            _ => panic!("expected complete read"),
+        };
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "antigravity|modern-resp-1");
+        assert_eq!(entries[0].model, "antigravity/gemini-3.7-flash");
+        assert_eq!(entries[0].total(), 206000);
+        assert_eq!(entries[0].date.timestamp(), 1787140000);
     }
 }
