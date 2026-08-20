@@ -434,13 +434,49 @@
     mythical: "Mythical",
   };
 
-  const itemDisplay: Record<string, { name: string; tileBg: string; tileBorder: string; iconColor: string }> = {
-    mint: { name: "Nature Mint", tileBg: "rgba(57,217,138,0.12)", tileBorder: "1px solid rgba(57,217,138,0.3)", iconColor: "#39D98A" },
-    rareCandy: { name: "Rare Candy", tileBg: "rgba(255,98,89,0.12)", tileBorder: "1px solid rgba(255,98,89,0.3)", iconColor: "#FF6259" },
-    egg_basic: { name: "Pokémon Egg (Basic)", tileBg: "rgba(255,255,255,0.05)", tileBorder: "1px solid rgba(255,255,255,0.12)", iconColor: "#E8B84B" },
-    egg_uncommon: { name: "Pokémon Egg (Uncommon+)", tileBg: "rgba(57,217,138,0.10)", tileBorder: "1.5px solid rgba(57,217,138,0.45)", iconColor: "#E8B84B" },
-    egg_rare: { name: "Pokémon Egg (Rare+)", tileBg: "rgba(91,140,255,0.10)", tileBorder: "1.5px solid rgba(91,140,255,0.45)", iconColor: "#E8B84B" },
-    shinyCharm: { name: "Shiny Charm", tileBg: "rgba(232,184,75,0.16)", tileBorder: "1.5px solid rgba(232,184,75,0.5)", iconColor: "#E8B84B" },
+  const itemDisplay: Record<string, { name: string; desc: string; tileBg: string; tileBorder: string; iconColor: string }> = {
+    mint: {
+      name: "Nature Mint",
+      desc: "Rerolls your active buddy's growth nature and temperament.",
+      tileBg: "rgba(57,217,138,0.12)",
+      tileBorder: "1px solid rgba(57,217,138,0.3)",
+      iconColor: "#39D98A",
+    },
+    rareCandy: {
+      name: "Rare Candy",
+      desc: "Instantly levels up and evolves your active companion.",
+      tileBg: "rgba(255,98,89,0.12)",
+      tileBorder: "1px solid rgba(255,98,89,0.3)",
+      iconColor: "#FF6259",
+    },
+    egg_basic: {
+      name: "Pokémon Egg (Basic)",
+      desc: "Hatches a new Gen I–V Pokémon partner to raise with tokens.",
+      tileBg: "rgba(255,255,255,0.05)",
+      tileBorder: "1px solid rgba(255,255,255,0.12)",
+      iconColor: "#E8B84B",
+    },
+    egg_uncommon: {
+      name: "Pokémon Egg (Uncommon+)",
+      desc: "Guarantees hatching an Uncommon, Rare, or Legendary species.",
+      tileBg: "rgba(57,217,138,0.10)",
+      tileBorder: "1.5px solid rgba(57,217,138,0.45)",
+      iconColor: "#E8B84B",
+    },
+    egg_rare: {
+      name: "Pokémon Egg (Rare+)",
+      desc: "Premium egg with high odds for Rare, Legendary & Mythical Pokémon.",
+      tileBg: "rgba(91,140,255,0.10)",
+      tileBorder: "1.5px solid rgba(91,140,255,0.45)",
+      iconColor: "#E8B84B",
+    },
+    shinyCharm: {
+      name: "Shiny Charm",
+      desc: "Permanently boosts the odds of hatching rare Shiny Pokémon ✨",
+      tileBg: "rgba(232,184,75,0.16)",
+      tileBorder: "1.5px solid rgba(232,184,75,0.5)",
+      iconColor: "#E8B84B",
+    },
   };
 
   const toolColors: Record<string, string> = {
@@ -960,7 +996,7 @@
               {#if c.ownedItems.length > 0}
                 <div class="bag-list">
                   {#each c.ownedItems as [kind, count]}
-                    {@const disp = itemDisplay[kind] ?? { name: kind, tileBg: "rgba(255,255,255,0.05)", tileBorder: "1px solid rgba(255,255,255,0.1)", iconColor: "#E8B84B" }}
+                    {@const disp = itemDisplay[kind] ?? { name: kind, desc: "A training item.", tileBg: "rgba(255,255,255,0.05)", tileBorder: "1px solid rgba(255,255,255,0.1)", iconColor: "#E8B84B" }}
                     <div class="bag-item-row">
                       <div class="item-tile" style="background: {disp.tileBg}; border: {disp.tileBorder};">
                         {#if kind === "mint"}
@@ -973,8 +1009,13 @@
                           <svg width="14" height="14" viewBox="0 0 24 24" fill={disp.iconColor}><path d="M12 2.5c.3 3.2 1 5.6 2.1 7.1 1.5 1.1 3.9 1.8 7.1 2.1-3.2.3-5.6 1-7.1 2.1-1.1 1.5-1.8 3.9-2.1 7.1-.3-3.2-1-5.6-2.1-7.1-1.5-1.1-3.9-1.8-7.1-2.1 3.2-.3 5.6-1 7.1-2.1 1.1-1.5 1.8-3.9 2.1-7.1Z"></path></svg>
                         {/if}
                       </div>
-                      <span class="bag-item-name">{disp.name}</span>
-                      <span class="bag-item-qty">×{count}</span>
+                      <div class="bag-item-info">
+                        <div class="bag-item-top">
+                          <span class="bag-item-name">{disp.name}</span>
+                          <span class="bag-item-qty">×{count}</span>
+                        </div>
+                        <span class="item-desc-text">{disp.desc}</span>
+                      </div>
                     </div>
                   {/each}
                 </div>
@@ -994,7 +1035,7 @@
               <div class="shop-items-list">
                 {#each c.shop as item (item.kind + (item.tier ?? ""))}
                   {@const itemKey = item.kind === "egg" ? `egg_${item.tier ?? "basic"}` : item.kind}
-                  {@const disp = itemDisplay[itemKey] ?? { name: item.kind, tileBg: "rgba(255,255,255,0.05)", tileBorder: "1px solid rgba(255,255,255,0.1)", iconColor: "#E8B84B" }}
+                  {@const disp = itemDisplay[itemKey] ?? { name: item.kind, desc: "A training item.", tileBg: "rgba(255,255,255,0.05)", tileBorder: "1px solid rgba(255,255,255,0.1)", iconColor: "#E8B84B" }}
                   <div class="shop-item-row">
                     <div class="item-tile" style="background: {disp.tileBg}; border: {disp.tileBorder};">
                       {#if item.kind === "mint"}
@@ -1009,6 +1050,7 @@
                     </div>
                     <div class="shop-item-info">
                       <span class="shop-item-name">{disp.name}</span>
+                      <span class="item-desc-text">{disp.desc}</span>
                       <div class="shop-price-row">
                         <svg width="11" height="11" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2" fill="#E8B84B" stroke="#9C6B1F" stroke-width="1.3"></circle></svg>
                         <span class="shop-price-val">{tokens(item.price)}</span>
@@ -1879,8 +1921,19 @@
     justify-content: center;
     flex-shrink: 0;
   }
-  .bag-item-name {
+  .bag-item-info {
     flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .bag-item-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .bag-item-name {
     font-size: 12px;
     font-weight: 600;
     color: #F2F3F5;
@@ -1890,6 +1943,12 @@
     font-weight: 700;
     color: #8B93A7;
     font-family: "JetBrains Mono", monospace;
+  }
+  .item-desc-text {
+    font-size: 10px;
+    line-height: 1.35;
+    color: #8B93A7;
+    margin: 1px 0 2px;
   }
   .empty-bag-state {
     display: flex;
@@ -1929,7 +1988,7 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
   }
   .shop-item-name {
     font-size: 12px;
