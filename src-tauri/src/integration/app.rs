@@ -587,7 +587,7 @@ pub fn toggle_pet_window(app: tauri::AppHandle) -> Result<bool, String> {
         let builder =
             tauri::WebviewWindowBuilder::new(&app, "pet", tauri::WebviewUrl::App("/pet".into()))
                 .title("Companion Pet")
-                .inner_size(160.0, 160.0)
+                .inner_size(220.0, 220.0)
                 .resizable(false)
                 .decorations(false)
                 .transparent(true)

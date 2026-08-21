@@ -400,8 +400,10 @@
   }
 
   .pet-container {
-    width: 160px;
-    height: 160px;
+    width: 100vw;
+    height: 100vh;
+    min-width: 220px;
+    min-height: 220px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -716,16 +718,16 @@
 
   /* Mega Overdrive Styles */
   .pet-wrapper.overdrive {
-    box-shadow: 0 0 26px rgba(255, 0, 122, 0.7), inset 0 0 16px rgba(0, 229, 255, 0.3);
+    box-shadow: 0 0 16px rgba(255, 0, 122, 0.6), 0 0 30px rgba(0, 229, 255, 0.4), inset 0 0 14px rgba(0, 229, 255, 0.25);
     animation: petOverdrivePulse 2s infinite ease-in-out;
   }
 
   @keyframes petOverdrivePulse {
     0%, 100% {
-      box-shadow: 0 0 24px rgba(255, 0, 122, 0.7), inset 0 0 14px rgba(0, 229, 255, 0.3);
+      box-shadow: 0 0 16px rgba(255, 0, 122, 0.6), 0 0 28px rgba(0, 229, 255, 0.35), inset 0 0 14px rgba(0, 229, 255, 0.25);
     }
     50% {
-      box-shadow: 0 0 34px rgba(0, 229, 255, 0.85), inset 0 0 20px rgba(255, 0, 122, 0.45);
+      box-shadow: 0 0 22px rgba(255, 0, 122, 0.8), 0 0 36px rgba(0, 229, 255, 0.55), inset 0 0 18px rgba(255, 0, 122, 0.35);
     }
   }
 
