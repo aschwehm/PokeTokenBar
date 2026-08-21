@@ -602,7 +602,10 @@ pub fn get_or_fetch_pokedex_details(id: i64, lang: &str) -> Option<PokedexDetail
 
     // Fetch species detail from PokeAPI
     let species_url = format!("https://pokeapi.co/api/v2/pokemon-species/{id}");
-    let resp = ureq::get(&species_url).timeout(Duration::from_secs(8)).call().ok()?;
+    let resp = ureq::get(&species_url)
+        .timeout(Duration::from_secs(8))
+        .call()
+        .ok()?;
     let dto: SpeciesDTO = resp.into_json().ok()?;
 
     // Find name in requested lang, fallback to English or default
@@ -659,7 +662,10 @@ pub fn get_or_fetch_pokedex_details(id: i64, lang: &str) -> Option<PokedexDetail
 
     // Fetch height and weight from pokemon/{id}
     let pokemon_url = format!("https://pokeapi.co/api/v2/pokemon/{id}");
-    let (height_m, weight_kg) = if let Ok(r) = ureq::get(&pokemon_url).timeout(Duration::from_secs(8)).call() {
+    let (height_m, weight_kg) = if let Ok(r) = ureq::get(&pokemon_url)
+        .timeout(Duration::from_secs(8))
+        .call()
+    {
         if let Ok(p_dto) = r.into_json::<PokemonDetailDTO>() {
             let h = p_dto.height.unwrap_or(0.0) / 10.0;
             let w = p_dto.weight.unwrap_or(0.0) / 10.0;

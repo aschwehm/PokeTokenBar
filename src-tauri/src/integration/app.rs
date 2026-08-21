@@ -532,8 +532,8 @@ pub fn set_mega_overdrive_enabled(
     let mut inner = state.lock().map_err(|e| e.to_string())?;
     inner.companion.set_mega_overdrive_enabled(enabled);
     let burn_tier = inner.usage.burn_tier();
-    inner.companion.is_mega_overdrive = enabled
-        && (burn_tier == BurnTier::Fast || burn_tier == BurnTier::Blazing);
+    inner.companion.is_mega_overdrive =
+        enabled && (burn_tier == BurnTier::Fast || burn_tier == BurnTier::Blazing);
     Ok(build_snapshot(&inner))
 }
 
@@ -619,7 +619,9 @@ pub async fn get_pokedex_details(
 ) -> Result<Option<crate::providers::pokeapi::PokedexDetails>, String> {
     let language = lang.unwrap_or_else(|| "en".to_string());
     tauri::async_runtime::spawn_blocking(move || {
-        Ok(crate::providers::pokeapi::get_or_fetch_pokedex_details(id, &language))
+        Ok(crate::providers::pokeapi::get_or_fetch_pokedex_details(
+            id, &language,
+        ))
     })
     .await
     .map_err(|e| e.to_string())?

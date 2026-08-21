@@ -413,7 +413,8 @@ pub fn conversation_entries(database: &Path) -> ConversationRead {
                 let idx: i64 = row.get(0).unwrap_or(0);
                 if let Ok(blob) = row.get::<_, Vec<u8>>(1) {
                     if !blob.is_empty() {
-                        let chat_model_opt = proto::message(&blob, 1).or_else(|| proto::message(&blob, 2));
+                        let chat_model_opt =
+                            proto::message(&blob, 1).or_else(|| proto::message(&blob, 2));
                         let last_step_opt = chat_model_opt.and_then(extract_last_step_index);
                         let fallback = last_step_opt
                             .and_then(|s_idx| step_timestamps.get(&s_idx).copied())
@@ -1077,18 +1078,34 @@ mod tests {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("c_modern.db");
         let conn = Connection::open(&db_path).expect("open test db");
-        conn.execute("CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);", []).unwrap();
-        conn.execute("CREATE TABLE steps (idx INTEGER PRIMARY KEY, metadata BLOB);", []).unwrap();
+        conn.execute(
+            "CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE steps (idx INTEGER PRIMARY KEY, metadata BLOB);",
+            [],
+        )
+        .unwrap();
 
         // Insert step 42 with timestamp for 2026-08-20
         let mut step_stamp = Vec::new();
         step_stamp.extend(encode_field_varint(1, 1787140000));
         let mut step_meta = Vec::new();
         step_meta.extend(encode_field_bytes(1, &step_stamp));
-        conn.execute("INSERT INTO steps (idx, metadata) VALUES (42, ?1);", rusqlite::params![step_meta]).unwrap();
+        conn.execute(
+            "INSERT INTO steps (idx, metadata) VALUES (42, ?1);",
+            rusqlite::params![step_meta],
+        )
+        .unwrap();
 
         // Insert gen_metadata with idx 0
-        conn.execute("INSERT INTO gen_metadata (idx, data) VALUES (0, ?1);", rusqlite::params![root]).unwrap();
+        conn.execute(
+            "INSERT INTO gen_metadata (idx, data) VALUES (0, ?1);",
+            rusqlite::params![root],
+        )
+        .unwrap();
 
         let read = conversation_entries(&db_path);
         let entries = match read {
