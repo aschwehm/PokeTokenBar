@@ -46,6 +46,8 @@
   let wasSleeping = $state(false);
 
   // Drag vs Click detection
+  let isPointerDown = false;
+  let hasDragged = false;
   let pointerDownX = 0;
   let pointerDownY = 0;
   let pointerDownTime = 0;
@@ -160,11 +162,21 @@
 
   function handleMouseDown(e: MouseEvent) {
     if (e.button === 0) {
+      isPointerDown = true;
+      hasDragged = false;
       pointerDownX = e.clientX;
       pointerDownY = e.clientY;
       pointerDownTime = Date.now();
+    }
+  }
+
+  async function handleMouseMove(e: MouseEvent) {
+    if (!isPointerDown || hasDragged) return;
+    const dist = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
+    if (dist > 5) {
+      hasDragged = true;
       try {
-        getCurrentWindow().startDragging();
+        await getCurrentWindow().startDragging();
       } catch {
         // ignore
       }
@@ -173,10 +185,13 @@
 
   function handleMouseUp(e: MouseEvent) {
     if (e.button === 0) {
+      const wasDown = isPointerDown;
+      const didDrag = hasDragged;
+      isPointerDown = false;
+      hasDragged = false;
       const dist = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
       const elapsed = Date.now() - pointerDownTime;
-      // If moved < 6px and held < 350ms, it was a click/pet!
-      if (dist < 6 && elapsed < 350) {
+      if (wasDown && !didDrag && dist < 8 && elapsed < 500) {
         handlePetInteraction();
       }
     }
@@ -207,12 +222,14 @@
 
 <div
   class="pet-container"
-  data-tauri-drag-region
   onmousedown={handleMouseDown}
+  onmousemove={handleMouseMove}
   onmouseup={handleMouseUp}
-  role="toolbar"
-  tabindex="-1"
-  aria-label="Desktop Pet"
+  onclick={() => { if (!hasDragged) handlePetInteraction(); }}
+  role="button"
+  tabindex="0"
+  aria-label="Desktop Pet (Click to pet, drag to move)"
+  title="Click to Pet & Play / Drag to Move"
 >
   {#if snap}
     {@const c = snap.companion}
@@ -444,7 +461,8 @@
     align-items: center;
     justify-content: center;
     overflow: visible;
-    pointer-events: none;
+    pointer-events: auto;
+    cursor: pointer;
     z-index: 1;
   }
 

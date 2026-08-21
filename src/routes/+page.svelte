@@ -297,7 +297,12 @@
   }
 
   async function startDrag(e: MouseEvent) {
-    if (e.button === 0 && !(e.target as HTMLElement).closest("button, select, input, .tab-btn, .window-btn")) {
+    if (
+      e.button === 0 &&
+      !(e.target as HTMLElement).closest(
+        "button, select, input, .tab-btn, .window-btn, .interactive-hero-box, .pokedex-card, .buy-action-btn, .bag-use-btn, .quick-btn"
+      )
+    ) {
       try {
         await getCurrentWindow().startDragging();
       } catch {
@@ -877,10 +882,20 @@
                       <span class="hero-gold-pill">✨ Sitrus Sparkle</span>
                     {/if}
                   </div>
-                  <div class="stage-pips">
-                    {#each Array(stageInfo.total) as _, i}
-                      <span class="pip" class:filled={i < stageInfo.stage}></span>
-                    {/each}
+                  <div class="hero-actions-right">
+                    <button
+                      class="pet-buddy-btn"
+                      onclick={() => triggerHeroPet()}
+                      title="Pet and play with your companion!"
+                      type="button"
+                    >
+                      <span>🥰 Pet</span>
+                    </button>
+                    <div class="stage-pips">
+                      {#each Array(stageInfo.total) as _, i}
+                        <span class="pip" class:filled={i < stageInfo.stage}></span>
+                      {/each}
+                    </div>
                   </div>
                 </div>
                 <div class="hero-body">
@@ -2947,6 +2962,110 @@
     animation: heartFly 1.1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
     filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.7));
     z-index: 20;
+  }
+
+  .hero-actions-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .pet-buddy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(255, 107, 129, 0.16);
+    border: 1px solid rgba(255, 107, 129, 0.35);
+    color: #FFA5B4;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .pet-buddy-btn:hover {
+    background: rgba(255, 107, 129, 0.28);
+    border-color: rgba(255, 107, 129, 0.6);
+    color: #FFF;
+    transform: scale(1.05);
+    box-shadow: 0 0 10px rgba(255, 107, 129, 0.35);
+  }
+
+  .pet-buddy-btn:active {
+    transform: scale(0.95);
+  }
+
+  /* Keyframe Animations */
+  @keyframes petHop {
+    0% { transform: translateY(0) scale(1, 1); }
+    20% { transform: translateY(2px) scale(1.15, 0.85); }
+    45% { transform: translateY(-16px) scale(0.9, 1.15); }
+    70% { transform: translateY(-4px) scale(1.05, 0.95); }
+    100% { transform: translateY(0) scale(1, 1); }
+  }
+
+  @keyframes petBackflip {
+    0% { transform: translateY(0) rotate(0deg) scale(1); }
+    20% { transform: translateY(3px) scale(1.15, 0.85); }
+    50% { transform: translateY(-20px) rotate(-180deg) scale(1.1); }
+    80% { transform: translateY(-2px) rotate(-360deg) scale(0.95, 1.05); }
+    100% { transform: translateY(0) rotate(-360deg) scale(1); }
+  }
+
+  @keyframes petWiggle {
+    0%, 100% { transform: rotate(0deg) scale(1); }
+    20% { transform: rotate(-12deg) scale(1.05); }
+    40% { transform: rotate(10deg) scale(1.05); }
+    60% { transform: rotate(-8deg) scale(1.02); }
+    80% { transform: rotate(6deg) scale(1.02); }
+  }
+
+  @keyframes wakePop {
+    0% { transform: scale(0.85) translateY(4px); }
+    40% { transform: scale(1.25) translateY(-12px); }
+    70% { transform: scale(0.95) translateY(0); }
+    100% { transform: scale(1) translateY(0); }
+  }
+
+  @keyframes eatingNom {
+    0%, 100% { transform: scale(1); }
+    25% { transform: scale(1.12, 0.9) translateY(-2px); }
+    50% { transform: scale(0.92, 1.08) translateY(-4px); }
+    75% { transform: scale(1.08, 0.94) translateY(-1px); }
+  }
+
+  @keyframes sleepBreath {
+    0%, 100% { transform: translateY(2px) scale(0.96) rotate(-2deg); opacity: 0.85; }
+    50% { transform: translateY(0px) scale(1) rotate(1deg); opacity: 0.95; }
+  }
+
+  @keyframes floatZzz {
+    0% { opacity: 0; transform: translate(0, 0) scale(0.6); }
+    25% { opacity: 0.9; }
+    75% { opacity: 0.7; }
+    100% { opacity: 0; transform: translate(14px, -24px) scale(1.1); }
+  }
+
+  @keyframes floatSparkle {
+    0%, 100% { transform: scale(0.7) rotate(0deg); opacity: 0.4; }
+    50% { transform: scale(1.2) rotate(180deg); opacity: 1; }
+  }
+
+  @keyframes heartFly {
+    0% {
+      opacity: 1;
+      transform: translate(0, 0) scale(0.6);
+    }
+    50% {
+      opacity: 1;
+      transform: translate(var(--target-x), calc(var(--target-y) * 0.6)) scale(var(--scale));
+    }
+    100% {
+      opacity: 0;
+      transform: translate(var(--target-x), var(--target-y)) scale(calc(var(--scale) * 1.2));
+    }
   }
 
   /* Bag Actions & Item Buttons */
