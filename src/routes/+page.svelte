@@ -514,11 +514,14 @@
   }
 
   function getStageInfo(stageText: string, isFinal: boolean): { stage: number; total: number } {
-    const match = stageText.match(/(\d+)\s+of\s+(\d+)/i);
+    const match = stageText.match(/(\d+)\s*(?:\/|of)\s*(\d+)/i);
     if (match) {
       return { stage: parseInt(match[1], 10), total: parseInt(match[2], 10) };
     }
-    return { stage: isFinal ? 3 : 1, total: 3 };
+    if (isFinal || stageText.toLowerCase().includes("final")) {
+      return { stage: 3, total: 3 };
+    }
+    return { stage: 1, total: 3 };
   }
 
   function getPaceLabel(tier: string): { label: string; isHot: boolean } {
@@ -1012,7 +1015,7 @@
                       {/each}
                     </div>
                     <div class="stage-row">
-                      <span class="stage-label">Stage {stageInfo.stage}/{stageInfo.total}</span>
+                      <span class="stage-label">{c.stageText ? c.stageText : `Stage ${stageInfo.stage}/${stageInfo.total}`}</span>
                       <span class="stage-pct">{growthPct}%</span>
                     </div>
                   </div>
@@ -1190,13 +1193,17 @@
         {#if currentTab === "shop"}
           {@const isOverdriveActive = Boolean(c.isMegaOverdrive || (megaOverdriveSetting && (u.burnTier === "fast" || u.burnTier === "blazing")))}
           <div class="tab-pane">
-            <div class="wallet-card" class:overdrive-wallet={isOverdriveActive}>
-              {#if isOverdriveActive}
-                <div class="coin-rush-badge">
-                  <span class="rush-icon">⚡</span>
-                  <span class="rush-text">2× COIN RUSH ACTIVE (MEGA OVERDRIVE)</span>
+            {#if isOverdriveActive}
+              <div class="coin-rush-banner-top">
+                <span class="rush-icon">⚡</span>
+                <div class="rush-text-col">
+                  <span class="rush-title">2× COIN RUSH ACTIVE</span>
+                  <span class="rush-sub">Mega Overdrive Multiplier (Fast/Blazing Sprint)</span>
                 </div>
-              {/if}
+              </div>
+            {/if}
+
+            <div class="wallet-card" class:overdrive-wallet={isOverdriveActive}>
               <svg width="120" height="120" viewBox="0 0 24 24" class="wallet-watermark">
                 <circle cx="12" cy="12" r="9.5" fill="none" stroke="#fff" stroke-width="1.4"></circle>
                 <path d="M2.5 12h19" stroke="#fff" stroke-width="1.4"></path>
@@ -3275,27 +3282,44 @@
   }
 
   /* 2x Coin Rush Banner */
-  .wallet-card.overdrive-wallet {
-    border-color: rgba(255, 234, 0, 0.45);
-    box-shadow: 0 0 20px rgba(255, 234, 0, 0.25);
+  .coin-rush-banner-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    background: linear-gradient(90deg, rgba(255, 234, 0, 0.14), rgba(255, 107, 0, 0.2));
+    border: 1px solid rgba(255, 234, 0, 0.45);
+    box-shadow: 0 0 16px rgba(255, 234, 0, 0.15);
+    animation: goldPulseText 2s infinite ease-in-out;
   }
 
-  .coin-rush-badge {
-    position: absolute;
-    top: 8px;
-    right: 12px;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 3px 10px;
-    border-radius: 999px;
-    background: linear-gradient(90deg, rgba(255, 234, 0, 0.2), rgba(255, 107, 0, 0.25));
-    border: 1px solid rgba(255, 234, 0, 0.6);
-    color: #FFEA00;
-    font-size: 10px;
+  .coin-rush-banner-top .rush-icon {
+    font-size: 16px;
+    filter: drop-shadow(0 0 6px #FFEA00);
+  }
+
+  .coin-rush-banner-top .rush-text-col {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .coin-rush-banner-top .rush-title {
+    font-size: 11px;
     font-weight: 800;
-    letter-spacing: 0.04em;
-    animation: goldPulseText 1.5s infinite ease-in-out;
-    z-index: 2;
+    color: #FFEA00;
+    letter-spacing: 0.05em;
+  }
+
+  .coin-rush-banner-top .rush-sub {
+    font-size: 9.5px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .wallet-card.overdrive-wallet {
+    border-color: rgba(255, 234, 0, 0.4);
+    box-shadow: 0 0 20px rgba(255, 234, 0, 0.18);
   }
 </style>
