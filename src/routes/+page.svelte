@@ -146,29 +146,43 @@
     y: number;
   } | null>(null);
 
+  function focusOnMount(node: HTMLElement) {
+    node.focus();
+    if (node instanceof HTMLInputElement) {
+      node.select();
+    }
+  }
+
   function startEditingTrainerName() {
     trainerNameInput = snap?.companion.trainerName ?? "Trainer";
     isEditingTrainerName = true;
   }
 
   async function saveTrainerName() {
-    if (!trainerNameInput.trim()) {
+    const trimmed = trainerNameInput.trim();
+    if (!trimmed) {
       isEditingTrainerName = false;
       return;
     }
     try {
-      const res = await invoke<Snapshot>("set_trainer_name", { name: trainerNameInput.trim() });
+      const res = await invoke<Snapshot>("set_trainer_name", { name: trimmed });
       if (res) snap = res;
-    } catch {}
-    isEditingTrainerName = false;
+    } catch (e) {
+      console.error("Failed to set trainer name:", e);
+    } finally {
+      isEditingTrainerName = false;
+    }
   }
 
   async function chooseAvatar(speciesId: number | null) {
     try {
       const res = await invoke<Snapshot>("set_trainer_avatar", { speciesId });
       if (res) snap = res;
-    } catch {}
-    showAvatarPickerModal = false;
+    } catch (e) {
+      console.error("Failed to set trainer avatar:", e);
+    } finally {
+      showAvatarPickerModal = false;
+    }
   }
 
   interface DayCell {
@@ -1049,7 +1063,7 @@
           <div class="about-box">
             <div class="about-header">
               <span>PokéTokenBar</span>
-              <span class="version-tag">v0.3.6</span>
+              <span class="version-tag">v0.3.7</span>
             </div>
             <p class="about-sub">Pokémon companion for AI coding tokens on Windows & Linux.</p>
           </div>
@@ -1658,13 +1672,12 @@
               <div class="passport-body">
                 <!-- Avatar column -->
                 <div class="passport-avatar-box">
-                  <div
+                  <button
+                    type="button"
                     class="avatar-frame"
                     onclick={() => { showAvatarPickerModal = true; }}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={(e) => e.key === 'Enter' && (showAvatarPickerModal = true)}
                     title="Click to Change Trainer Avatar"
+                    aria-label="Change Trainer Avatar"
                   >
                     <img
                       class="avatar-sprite-img"
@@ -1675,7 +1688,7 @@
                     <div class="avatar-edit-overlay">
                       <span>Change ✎</span>
                     </div>
-                  </div>
+                  </button>
                   <span class="avatar-helper-text">Avatar</span>
                 </div>
 
@@ -1685,6 +1698,7 @@
                     {#if isEditingTrainerName}
                       <div class="name-edit-box">
                         <input
+                          use:focusOnMount
                           type="text"
                           class="trainer-name-input"
                           bind:value={trainerNameInput}
@@ -1699,17 +1713,16 @@
                         <button class="cancel-name-btn" onclick={() => isEditingTrainerName = false}>✕</button>
                       </div>
                     {:else}
-                      <div
+                      <button
+                        type="button"
                         class="trainer-name-display"
                         onclick={startEditingTrainerName}
-                        role="button"
-                        tabindex="0"
-                        onkeydown={(e) => e.key === 'Enter' && startEditingTrainerName()}
                         title="Click to Edit Nickname"
+                        aria-label="Click to Edit Nickname"
                       >
                         <span class="trainer-nickname">{trainerName}</span>
                         <span class="edit-pencil-icon">✎</span>
-                      </div>
+                      </button>
                     {/if}
                     <span class="trainer-id-pill">{trainerId}</span>
                   </div>
@@ -1782,7 +1795,7 @@
               </div>
 
               <!-- Pixel Grid Container -->
-              <div class="heatmap-grid-scroll">
+              <div class="heatmap-grid-scroll pk-scroll">
                 <div class="heatmap-grid-inner">
                   <!-- Month labels row -->
                   <div class="heatmap-months-row">
@@ -1856,7 +1869,7 @@
                 <span class="journal-counter">{(c.journal ?? []).length} Memories</span>
               </div>
 
-              <div class="journal-feed">
+              <div class="journal-feed pk-scroll">
                 {#if (c.journal ?? []).length === 0}
                   <div class="journal-empty">
                     <span class="empty-icon">📖</span>
@@ -2034,7 +2047,7 @@
             <button class="modal-close" onclick={() => { showRibbonModal = false; }}>✕</button>
           </div>
 
-          <div class="ribbons-grid">
+          <div class="ribbons-grid pk-scroll">
             {#each ORDERED_RIBBON_IDS as rId}
               {@const rib = getRibbon(rId)}
               {#if rib}
@@ -2090,7 +2103,7 @@
             <button class="modal-close" onclick={() => { showAvatarPickerModal = false; }}>✕</button>
           </div>
 
-          <div class="avatar-grid-select">
+          <div class="avatar-grid-select pk-scroll">
             <button class="avatar-select-card default-active-opt" onclick={() => chooseAvatar(null)} type="button">
               <span class="avatar-opt-title">🌟 Follow Active Partner</span>
               <span class="avatar-opt-sub">Automatically matches your currently raised companion</span>
@@ -2346,18 +2359,27 @@
     gap: 12px;
   }
 
+  .pk-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  }
   .pk-scroll::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
   }
   .pk-scroll::-webkit-scrollbar-track {
-    background: transparent;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 999px;
   }
   .pk-scroll::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.16);
     border-radius: 999px;
   }
   .pk-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.28);
+  }
+  .pk-scroll::-webkit-scrollbar-corner {
+    background: transparent;
   }
 
   .bottom-vignette {
@@ -4054,6 +4076,75 @@
     box-shadow: 0 0 8px var(--rib-glow, transparent);
   }
 
+  /* Generic Modal Dialogs (Ribbon Case & Avatar Picker) */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: rgba(4, 6, 10, 0.82);
+    backdrop-filter: blur(14px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    animation: fadeIn 0.2s ease;
+  }
+
+  .modal-card {
+    position: relative;
+    width: 100%;
+    max-width: 440px;
+    background: linear-gradient(180deg, #181C26 0%, #0E1017 100%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+    padding: 20px 18px 18px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85), 0 0 30px rgba(255, 215, 0, 0.12);
+    display: flex;
+    flex-direction: column;
+    animation: modalPop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .modal-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: #F8FAFC;
+    margin: 0;
+  }
+
+  .modal-subtitle {
+    font-size: 11px;
+    color: #8B93A7;
+    margin: 2px 0 0 0;
+  }
+
+  .modal-close {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94A3B8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s ease;
+  }
+  .modal-close:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #F8FAFC;
+    transform: scale(1.05);
+  }
+
   /* Ribbon Case Modal */
   .modal-card.ribbon-modal {
     max-width: 520px;
@@ -4351,7 +4442,17 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    background: transparent;
+    border: none;
+    padding: 2px 6px;
+    margin: -2px -6px;
+    border-radius: 8px;
     cursor: pointer;
+    text-align: left;
+    transition: background 0.15s ease;
+  }
+  .trainer-name-display:hover {
+    background: rgba(255, 255, 255, 0.08);
   }
   .trainer-name-display:hover .edit-pencil-icon {
     color: #FCD34D;

@@ -6,7 +6,7 @@ This project is a from-scratch cross-platform port of the original macOS menu-ba
 
 It monitors the AI coding tokens you burn across 10 tools (Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI, Copilot CLI, Kiro CLI) and turns them into a growing, evolving Pokémon buddy right on your desktop.
 
-> **Status: v0.3.6 — Trainer Passport, GitHub Activity Heatmap & PokéJournal (Linux & Windows).**
+> **Status: v0.3.7 — Trainer Passport, GitHub Activity Heatmap & PokéJournal (Linux & Windows).**
 > - **10 Supported AI Providers**: Claude Code, Codex, Gemini CLI / AGY, Grok CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Copilot CLI, Kiro CLI.
 > - **🪪 Holographic Trainer Passport**: Custom Trainer ID (`#TR-XXXX`), customizable nickname, Pokédex buddy avatar selector, and career rank titles (`Novice` → `AI Grandmaster Champion`).
 > - **🟩 GitHub-Style Token Coding Heatmap**: 26-week retroactive pixel contribution grid with 5 token intensity levels, current/best streak trackers, active day tallies, and daily average volume.

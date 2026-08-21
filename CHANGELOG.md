@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.7] - 2026-08-21
+
+### Fixed
+- **🏅 Ribbon Case Modal Dialog**: Added full fixed-position backdrop and card styling so clicking the ribbon bar in the Buddy tab opens the interactive Ribbon Case modal.
+- **🪪 Trainer Passport Customization**:
+  - Fixed Avatar Picker Modal backdrop and scroll container so clicking the avatar frame opens the full Pokédex avatar selection dialog.
+  - Converted nickname display and avatar frame into accessible interactive buttons with hover feedback.
+  - Added automatic text focusing and selection on entering nickname edit mode (`Enter` to save, `Escape` to cancel).
+- **🖥️ Window Layout & Dimensions**: Increased default window size to 460×660 in `tauri.conf.json` to comfortably fit all 5 navigation tabs (`Buddy`, `Usage`, `Shop & Bag`, `Pokédex`, `Passport`) without cramped icons.
+- **🎨 Custom Themed Scrollbars**: Added `.pk-scroll` styling (thin scrollbars with themed tracks and thumbs across both vertical and horizontal directions) to the Coding Activity Heatmap, PokéJournal feed, Ribbon Case grid, and Avatar Picker.
+
+---
+
 ## [0.3.6] - 2026-08-21
 
 ### Added
