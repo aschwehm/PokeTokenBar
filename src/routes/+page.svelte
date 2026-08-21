@@ -41,6 +41,8 @@
     dex: DexSpecies[];
     justEvolvedTo: string | null;
     justGraduated: string | null;
+    hasGoldenAura?: boolean;
+    berryFeedback?: string | null;
   }
 
   interface ProviderView {
@@ -177,12 +179,89 @@
     }, 400);
   }
 
+  // Hero Petting & Interactive Moods
+  interface HeroHeart {
+    id: number;
+    emoji: string;
+    x: number;
+    y: number;
+    scale: number;
+  }
+  let heroHearts = $state<HeroHeart[]>([]);
+  let heroHeartSeq = 0;
+  let heroAnimState = $state<"normal" | "hop" | "backflip" | "wiggle" | "wake" | "eating">("normal");
+  let heroAnimTimeout: ReturnType<typeof setTimeout> | null = null;
+  let heroWakeTimeout: ReturnType<typeof setTimeout> | null = null;
+  let heroWakingUp = $state(false);
+
+  let isSleepingHero = $derived.by(() => {
+    if (!snap) return false;
+    if (snap.companion.isEgg) return false;
+    if (heroWakingUp) return false;
+    return snap.companion.displayState === "sleep";
+  });
+
+  function triggerHeroPet(specificAnim?: "hop" | "backflip" | "wiggle" | "wake" | "eating") {
+    if (heroAnimTimeout) clearTimeout(heroAnimTimeout);
+
+    if (isSleepingHero && !specificAnim) {
+      heroWakingUp = true;
+      heroAnimState = "wake";
+      spawnHeroHearts(["✨", "⭐", "❗"]);
+      if (heroWakeTimeout) clearTimeout(heroWakeTimeout);
+      heroWakeTimeout = setTimeout(() => {
+        heroWakingUp = false;
+        heroAnimState = "normal";
+      }, 1500);
+      return;
+    }
+
+    const rolls: Array<"hop" | "backflip" | "wiggle"> = ["hop", "backflip", "wiggle", "hop"];
+    const chosen = specificAnim ?? rolls[Math.floor(Math.random() * rolls.length)];
+    heroAnimState = chosen;
+    const dur = chosen === "backflip" ? 750 : chosen === "eating" ? 900 : chosen === "wake" ? 1000 : 600;
+    heroAnimTimeout = setTimeout(() => {
+      heroAnimState = "normal";
+    }, dur);
+
+    const emojis = specificAnim === "eating" ? ["😋", "✨", "💖"] : ["❤️", "💖", "✨", "🥰", "⭐"];
+    spawnHeroHearts(emojis);
+  }
+
+  function spawnHeroHearts(emojis: string[]) {
+    const count = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      const p: HeroHeart = {
+        id: ++heroHeartSeq,
+        emoji: emojis[Math.floor(Math.random() * emojis.length)],
+        x: (Math.random() - 0.5) * 60,
+        y: -10 - Math.random() * 30,
+        scale: 0.8 + Math.random() * 0.5,
+      };
+      heroHearts = [...heroHearts, p];
+      setTimeout(() => {
+        heroHearts = heroHearts.filter((h) => h.id !== p.id);
+      }, 1200);
+    }
+  }
+
   async function useCandy() {
     snap = await invoke<Snapshot>("use_rare_candy");
+    triggerHeroPet("hop");
   }
 
   async function useMint() {
     snap = await invoke<Snapshot>("use_mint");
+    triggerHeroPet("wiggle");
+  }
+
+  async function useBerry(kind: string) {
+    try {
+      snap = await invoke<Snapshot>("use_berry", { kind });
+      triggerHeroPet("eating");
+    } catch {
+      // ignore
+    }
   }
 
   async function minimizeWindow() {
@@ -435,6 +514,20 @@
   };
 
   const itemDisplay: Record<string, { name: string; desc: string; tileBg: string; tileBorder: string; iconColor: string }> = {
+    oranBerry: {
+      name: "Oran Berry",
+      desc: "Sweet berry that feeds your buddy (+15M XP) and boosts happiness.",
+      tileBg: "rgba(59,130,246,0.12)",
+      tileBorder: "1px solid rgba(59,130,246,0.3)",
+      iconColor: "#3B82F6",
+    },
+    sitrusBerry: {
+      name: "Sitrus Berry",
+      desc: "Premium golden berry (+50M XP) granting a sparkling golden aura.",
+      tileBg: "rgba(245,158,11,0.12)",
+      tileBorder: "1px solid rgba(245,158,11,0.3)",
+      iconColor: "#F59E0B",
+    },
     mint: {
       name: "Nature Mint",
       desc: "Rerolls your active buddy's growth nature and temperament.",
@@ -444,7 +537,7 @@
     },
     rareCandy: {
       name: "Rare Candy",
-      desc: "Instantly levels up and evolves your active companion.",
+      desc: "Instantly levels up and evolves your active companion (+100M XP).",
       tileBg: "rgba(255,98,89,0.12)",
       tileBorder: "1px solid rgba(255,98,89,0.3)",
       iconColor: "#FF6259",
@@ -769,10 +862,21 @@
               {@const stageInfo = getStageInfo(c.stageText, c.isFinalStage)}
               {@const growthPct = Math.round(c.progress * 100)}
 
-              <div class="buddy-hero">
+              <div
+                class="buddy-hero"
+                class:sleeping-hero={isSleepingHero}
+                class:golden-hero={c.hasGoldenAura}
+              >
                 <div class="hero-glow" style="background: radial-gradient(circle, {typeInfo.primary.bg.replace('0.14', '0.22')}, transparent 70%);"></div>
                 <div class="hero-header-row">
-                  <span class="section-tag">ACTIVE BUDDY</span>
+                  <div class="hero-tag-group">
+                    <span class="section-tag">ACTIVE BUDDY</span>
+                    {#if isSleepingHero}
+                      <span class="hero-sleep-pill">💤 Sleeping</span>
+                    {:else if c.hasGoldenAura}
+                      <span class="hero-gold-pill">✨ Sitrus Sparkle</span>
+                    {/if}
+                  </div>
                   <div class="stage-pips">
                     {#each Array(stageInfo.total) as _, i}
                       <span class="pip" class:filled={i < stageInfo.stage}></span>
@@ -780,13 +884,51 @@
                   </div>
                 </div>
                 <div class="hero-body">
-                  <div class="sprite-box">
+                  <div
+                    class="sprite-box interactive-hero-box"
+                    onclick={() => triggerHeroPet()}
+                    role="button"
+                    tabindex="0"
+                    onkeydown={(e) => e.key === 'Enter' && triggerHeroPet()}
+                    title="Click or pet your companion!"
+                  >
                     <img
                       class="hero-sprite"
+                      class:bounce={u.burnTier === "fast" || u.burnTier === "blazing"}
+                      class:hop={heroAnimState === "hop"}
+                      class:backflip={heroAnimState === "backflip"}
+                      class:wiggle={heroAnimState === "wiggle"}
+                      class:wake-up={heroAnimState === "wake"}
+                      class:eating={heroAnimState === "eating"}
+                      class:sleeping-mon={isSleepingHero}
                       src={spriteUrl(c.currentSpeciesId, c.isShiny)}
                       alt={c.displayName}
                       onerror={(e) => fallbackStaticSprite(e, c.currentSpeciesId ?? 1, c.isShiny)}
                     />
+
+                    {#if isSleepingHero}
+                      <div class="hero-zzz-box">
+                        <span class="hero-zzz hero-zzz-1">z</span>
+                        <span class="hero-zzz hero-zzz-2">Z</span>
+                        <span class="hero-zzz hero-zzz-3">💤</span>
+                      </div>
+                    {/if}
+
+                    {#if c.hasGoldenAura}
+                      <div class="hero-gold-sparkles">
+                        <span class="hero-sp sp-1">✨</span>
+                        <span class="hero-sp sp-2">⭐</span>
+                      </div>
+                    {/if}
+
+                    {#each heroHearts as h (h.id)}
+                      <span
+                        class="floating-heart hero-floating-heart"
+                        style="--target-x: {h.x}px; --target-y: {h.y}px; --scale: {h.scale};"
+                      >
+                        {h.emoji}
+                      </span>
+                    {/each}
                   </div>
                   <div class="hero-details">
                     <div class="name-row">
@@ -849,29 +991,43 @@
             </div>
 
             <div class="quick-items-section">
-              <span class="section-tag">QUICK ITEMS</span>
+              <span class="section-tag">QUICK ITEMS & BERRIES</span>
               <div class="quick-grid">
                 <button
-                  class="quick-btn"
-                  disabled={!c.hasActive || c.isEgg}
-                  onclick={useCandy}
+                  class="quick-btn berry-btn"
+                  disabled={!c.hasActive || c.isEgg || (c.ownedItems.find(([k]) => k === 'oranBerry')?.[1] ?? 0) === 0}
+                  onclick={() => useBerry('oranBerry')}
+                  title="Feed Oran Berry (+15M XP)"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#FF6259">
-                    <path d="M9 9 4 6v12l5-3Z"></path>
-                    <path d="M15 9l5-3v12l-5-3Z"></path>
-                    <rect x="9" y="9" width="6" height="6" rx="1.5"></rect>
-                  </svg>
-                  <span>Use Rare Candy</span>
+                  <span class="btn-emoji">🫐</span>
+                  <span>Feed Oran ({c.ownedItems.find(([k]) => k === 'oranBerry')?.[1] ?? 0})</span>
+                </button>
+                <button
+                  class="quick-btn berry-btn gold"
+                  disabled={!c.hasActive || c.isEgg || (c.ownedItems.find(([k]) => k === 'sitrusBerry')?.[1] ?? 0) === 0}
+                  onclick={() => useBerry('sitrusBerry')}
+                  title="Feed Sitrus Berry (+50M XP + Golden Aura)"
+                >
+                  <span class="btn-emoji">🍊</span>
+                  <span>Feed Sitrus ({c.ownedItems.find(([k]) => k === 'sitrusBerry')?.[1] ?? 0})</span>
                 </button>
                 <button
                   class="quick-btn"
-                  disabled={!c.hasActive || c.isEgg}
-                  onclick={useMint}
+                  disabled={!c.hasActive || c.isEgg || (c.ownedItems.find(([k]) => k === 'rareCandy')?.[1] ?? 0) === 0}
+                  onclick={useCandy}
+                  title="Use Rare Candy (+100M XP)"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#39D98A">
-                    <path d="M20 4C11 4 4 10 4 17c0 1.5 1 2.5 2.2 2.8C7 13 12 8 20 4Z"></path>
-                  </svg>
-                  <span>Use Mint</span>
+                  <span class="btn-emoji">🍬</span>
+                  <span>Rare Candy ({c.ownedItems.find(([k]) => k === 'rareCandy')?.[1] ?? 0})</span>
+                </button>
+                <button
+                  class="quick-btn"
+                  disabled={!c.hasActive || c.isEgg || (c.ownedItems.find(([k]) => k === 'mint')?.[1] ?? 0) === 0}
+                  onclick={useMint}
+                  title="Use Nature Mint (Rerolls nature)"
+                >
+                  <span class="btn-emoji">🌿</span>
+                  <span>Nature Mint ({c.ownedItems.find(([k]) => k === 'mint')?.[1] ?? 0})</span>
                 </button>
               </div>
             </div>
@@ -999,7 +1155,11 @@
                     {@const disp = itemDisplay[kind] ?? { name: kind, desc: "A training item.", tileBg: "rgba(255,255,255,0.05)", tileBorder: "1px solid rgba(255,255,255,0.1)", iconColor: "#E8B84B" }}
                     <div class="bag-item-row">
                       <div class="item-tile" style="background: {disp.tileBg}; border: {disp.tileBorder};">
-                        {#if kind === "mint"}
+                        {#if kind === "oranBerry"}
+                          <span class="item-tile-emoji">🫐</span>
+                        {:else if kind === "sitrusBerry"}
+                          <span class="item-tile-emoji">🍊</span>
+                        {:else if kind === "mint"}
                           <svg width="14" height="14" viewBox="0 0 24 24" fill={disp.iconColor}><path d="M20 4C11 4 4 10 4 17c0 1.5 1 2.5 2.2 2.8C7 13 12 8 20 4Z"></path></svg>
                         {:else if kind === "rareCandy"}
                           <svg width="14" height="14" viewBox="0 0 24 24" fill={disp.iconColor}><path d="M9 9 4 6v12l5-3Z"></path><path d="M15 9l5-3v12l-5-3Z"></path><rect x="9" y="9" width="6" height="6" rx="1.5"></rect></svg>
@@ -1015,6 +1175,35 @@
                           <span class="bag-item-qty">×{count}</span>
                         </div>
                         <span class="item-desc-text">{disp.desc}</span>
+                      </div>
+                      <div class="bag-item-action">
+                        {#if kind === "oranBerry" || kind === "sitrusBerry"}
+                          <button
+                            class="bag-use-btn berry-feed-btn"
+                            disabled={!c.hasActive || c.isEgg}
+                            onclick={() => useBerry(kind)}
+                          >
+                            Feed
+                          </button>
+                        {:else if kind === "rareCandy"}
+                          <button
+                            class="bag-use-btn"
+                            disabled={!c.hasActive || c.isEgg}
+                            onclick={useCandy}
+                          >
+                            Use
+                          </button>
+                        {:else if kind === "mint"}
+                          <button
+                            class="bag-use-btn"
+                            disabled={!c.hasActive || c.isEgg}
+                            onclick={useMint}
+                          >
+                            Use
+                          </button>
+                        {:else if kind === "shinyCharm"}
+                          <span class="bag-held-badge">Active ✨</span>
+                        {/if}
                       </div>
                     </div>
                   {/each}
@@ -1038,7 +1227,11 @@
                   {@const disp = itemDisplay[itemKey] ?? { name: item.kind, desc: "A training item.", tileBg: "rgba(255,255,255,0.05)", tileBorder: "1px solid rgba(255,255,255,0.1)", iconColor: "#E8B84B" }}
                   <div class="shop-item-row">
                     <div class="item-tile" style="background: {disp.tileBg}; border: {disp.tileBorder};">
-                      {#if item.kind === "mint"}
+                      {#if item.kind === "oranBerry"}
+                        <span class="item-tile-emoji">🫐</span>
+                      {:else if item.kind === "sitrusBerry"}
+                        <span class="item-tile-emoji">🍊</span>
+                      {:else if item.kind === "mint"}
                         <svg width="16" height="16" viewBox="0 0 24 24" fill={disp.iconColor}><path d="M20 4C11 4 4 10 4 17c0 1.5 1 2.5 2.2 2.8C7 13 12 8 20 4Z"></path></svg>
                       {:else if item.kind === "rareCandy"}
                         <svg width="16" height="16" viewBox="0 0 24 24" fill={disp.iconColor}><path d="M9 9 4 6v12l5-3Z"></path><path d="M15 9l5-3v12l-5-3Z"></path><rect x="9" y="9" width="6" height="6" rx="1.5"></rect></svg>
@@ -2625,5 +2818,222 @@
     font-size: 11.5px;
     color: #5B6274;
     margin: 0;
+  }
+
+  /* Desktop Pet 2.0 & Interactive Moods in Main HUD */
+  .hero-tag-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .hero-sleep-pill {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(167, 139, 250, 0.18);
+    border: 1px solid rgba(167, 139, 250, 0.4);
+    color: #C084FC;
+    letter-spacing: 0.02em;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .hero-gold-pill {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, 0.18);
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    color: #FCD34D;
+    letter-spacing: 0.02em;
+    animation: goldPulseText 2s infinite ease-in-out;
+  }
+
+  @keyframes goldPulseText {
+    0%, 100% { opacity: 0.85; text-shadow: 0 0 6px rgba(245, 158, 11, 0.4); }
+    50% { opacity: 1; text-shadow: 0 0 12px rgba(245, 158, 11, 0.8); }
+  }
+
+  .interactive-hero-box {
+    position: relative;
+    cursor: pointer;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .interactive-hero-box:hover {
+    transform: scale(1.06);
+  }
+
+  .interactive-hero-box:active {
+    transform: scale(0.96);
+  }
+
+  .interactive-hero-box:focus {
+    outline: none;
+  }
+
+  /* Hero Animations */
+  .hero-sprite.hop {
+    animation: petHop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  }
+
+  .hero-sprite.backflip {
+    animation: petBackflip 0.72s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  }
+
+  .hero-sprite.wiggle {
+    animation: petWiggle 0.6s ease-in-out !important;
+  }
+
+  .hero-sprite.wake-up {
+    animation: wakePop 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  }
+
+  .hero-sprite.eating {
+    animation: eatingNom 0.8s ease-in-out !important;
+  }
+
+  .hero-sprite.sleeping-mon {
+    animation: sleepBreath 3.2s infinite ease-in-out !important;
+  }
+
+  /* Hero Sleep Zzz */
+  .hero-zzz-box {
+    position: absolute;
+    top: -10px;
+    right: -4px;
+    display: flex;
+    flex-direction: column;
+    pointer-events: none;
+  }
+
+  .hero-zzz {
+    position: absolute;
+    color: #C084FC;
+    font-weight: 800;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+    opacity: 0;
+    animation: floatZzz 3s infinite cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  .hero-zzz-1 { font-size: 11px; animation-delay: 0s; }
+  .hero-zzz-2 { font-size: 14px; animation-delay: 1s; }
+  .hero-zzz-3 { font-size: 17px; animation-delay: 2s; }
+
+  /* Hero Golden Sparkles */
+  .hero-gold-sparkles {
+    position: absolute;
+    inset: -6px;
+    pointer-events: none;
+  }
+
+  .hero-sp {
+    position: absolute;
+    font-size: 14px;
+    animation: floatSparkle 2s infinite ease-in-out;
+    filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.85));
+  }
+
+  .hero-sp.sp-1 { top: 0; left: 0; animation-delay: 0s; }
+  .hero-sp.sp-2 { bottom: 0; right: 0; animation-delay: 1s; font-size: 12px; }
+
+  /* Hero Floating Hearts */
+  .hero-floating-heart {
+    position: absolute;
+    font-size: 18px;
+    pointer-events: none;
+    animation: heartFly 1.1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.7));
+    z-index: 20;
+  }
+
+  /* Bag Actions & Item Buttons */
+  .item-tile-emoji {
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .bag-item-action {
+    display: flex;
+    align-items: center;
+    margin-left: 8px;
+  }
+
+  .bag-use-btn {
+    padding: 5px 12px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #F2F3F5;
+    transition: all 0.15s ease;
+  }
+
+  .bag-use-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-1px);
+  }
+
+  .bag-use-btn:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .bag-use-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .bag-use-btn.berry-feed-btn {
+    background: rgba(59, 130, 246, 0.18);
+    border-color: rgba(59, 130, 246, 0.45);
+    color: #93C5FD;
+  }
+
+  .bag-use-btn.berry-feed-btn:hover:not(:disabled) {
+    background: rgba(59, 130, 246, 0.3);
+    border-color: rgba(59, 130, 246, 0.65);
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+  }
+
+  .bag-held-badge {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(252, 211, 77, 0.14);
+    border: 1px solid rgba(252, 211, 77, 0.35);
+    color: #FCD34D;
+  }
+
+  .quick-btn .btn-emoji {
+    font-size: 15px;
+    line-height: 1;
+  }
+
+  .quick-btn.berry-btn {
+    background: rgba(59, 130, 246, 0.08);
+    border-color: rgba(59, 130, 246, 0.25);
+    color: #93C5FD;
+  }
+
+  .quick-btn.berry-btn:hover:not(:disabled) {
+    background: rgba(59, 130, 246, 0.18);
+    border-color: rgba(59, 130, 246, 0.45);
+  }
+
+  .quick-btn.berry-btn.gold {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.25);
+    color: #FCD34D;
+  }
+
+  .quick-btn.berry-btn.gold:hover:not(:disabled) {
+    background: rgba(245, 158, 11, 0.18);
+    border-color: rgba(245, 158, 11, 0.45);
   }
 </style>

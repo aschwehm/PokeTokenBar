@@ -218,27 +218,37 @@ impl PokemonBalance {
     }
 }
 
-/// Inventory item kinds — enum for future expansion (currently one candy).
+/// Inventory item kinds — candies, berries, mints, charms.
 /// Stored by rawValue in CompanionState.inventory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ItemKind {
-    RareCandy,
+    OranBerry,
+    SitrusBerry,
     Mint,
+    RareCandy,
     ShinyCharm,
 }
 
 impl ItemKind {
     /// All item kinds in declaration order — the canonical bag/shop iteration
     /// order (mirrors Swift's `ItemKind.allCases`).
-    pub const ALL: [ItemKind; 3] = [ItemKind::RareCandy, ItemKind::Mint, ItemKind::ShinyCharm];
+    pub const ALL: [ItemKind; 5] = [
+        ItemKind::OranBerry,
+        ItemKind::SitrusBerry,
+        ItemKind::Mint,
+        ItemKind::RareCandy,
+        ItemKind::ShinyCharm,
+    ];
 
     /// The raw string key under which this item is stored in
     /// `CompanionState.inventory` (matches the serialized `camelCase` raw value).
     pub fn raw_value(&self) -> &'static str {
         match self {
-            ItemKind::RareCandy => "rareCandy",
+            ItemKind::OranBerry => "oranBerry",
+            ItemKind::SitrusBerry => "sitrusBerry",
             ItemKind::Mint => "mint",
+            ItemKind::RareCandy => "rareCandy",
             ItemKind::ShinyCharm => "shinyCharm",
         }
     }
@@ -247,6 +257,8 @@ impl ItemKind {
     /// nil = no sprite (emoji fallback only).
     pub fn sprite_name(&self) -> Option<&'static str> {
         match self {
+            ItemKind::OranBerry => Some("oran-berry"),
+            ItemKind::SitrusBerry => Some("sitrus-berry"),
             ItemKind::RareCandy => Some("rare-candy"),
             // PokéAPI has no mint sprite (gen-8 item) → emoji fallback.
             ItemKind::Mint => None,
@@ -257,6 +269,8 @@ impl ItemKind {
     /// Fallback emoji before/while the sprite loads or on failure.
     pub fn fallback_emoji(&self) -> &'static str {
         match self {
+            ItemKind::OranBerry => "🫐",
+            ItemKind::SitrusBerry => "🍊",
             ItemKind::RareCandy => "🍬",
             ItemKind::Mint => "🌿",
             ItemKind::ShinyCharm => "✨",
@@ -266,8 +280,10 @@ impl ItemKind {
     /// Shop price (currency = used tokens). nil = not sold in the shop.
     pub fn shop_price(&self) -> Option<i64> {
         match self {
-            ItemKind::RareCandy => Some(RareCandy::PRICE),
+            ItemKind::OranBerry => Some(OranBerry::PRICE),
+            ItemKind::SitrusBerry => Some(SitrusBerry::PRICE),
             ItemKind::Mint => Some(Mint::PRICE),
+            ItemKind::RareCandy => Some(RareCandy::PRICE),
             ItemKind::ShinyCharm => Some(ShinyCharm::PRICE),
         }
     }
@@ -276,10 +292,32 @@ impl ItemKind {
     /// One-time purchase (no repurchase), shown as "applied" in the bag.
     pub fn is_passive(&self) -> bool {
         match self {
-            ItemKind::RareCandy | ItemKind::Mint => false,
+            ItemKind::OranBerry | ItemKind::SitrusBerry | ItemKind::RareCandy | ItemKind::Mint => {
+                false
+            }
             ItemKind::ShinyCharm => true,
         }
     }
+}
+
+/// Oran Berry balance constants.
+pub struct OranBerry;
+
+impl OranBerry {
+    /// XP injected into the current mon on use (15M tokens).
+    pub const XP: i64 = 15_000_000;
+    /// Shop price (50M tokens).
+    pub const PRICE: i64 = 50_000_000;
+}
+
+/// Sitrus Berry balance constants.
+pub struct SitrusBerry;
+
+impl SitrusBerry {
+    /// XP injected into the current mon on use (50M tokens).
+    pub const XP: i64 = 50_000_000;
+    /// Shop price (200M tokens).
+    pub const PRICE: i64 = 200_000_000;
 }
 
 /// Rare Candy balance constants.
@@ -1665,6 +1703,23 @@ mod tests {
         assert_eq!(RareCandy::WEEKLY_GRANT, 5);
         assert_eq!(RareCandy::PRICE, 500_000_000);
         assert_eq!(ItemKind::RareCandy.shop_price(), Some(500_000_000));
+    }
+
+    #[test]
+    fn berry_constants() {
+        assert_eq!(OranBerry::XP, 15_000_000);
+        assert_eq!(OranBerry::PRICE, 50_000_000);
+        assert_eq!(ItemKind::OranBerry.shop_price(), Some(50_000_000));
+        assert_eq!(ItemKind::OranBerry.sprite_name(), Some("oran-berry"));
+        assert_eq!(ItemKind::OranBerry.fallback_emoji(), "🫐");
+        assert!(!ItemKind::OranBerry.is_passive());
+
+        assert_eq!(SitrusBerry::XP, 50_000_000);
+        assert_eq!(SitrusBerry::PRICE, 200_000_000);
+        assert_eq!(ItemKind::SitrusBerry.shop_price(), Some(200_000_000));
+        assert_eq!(ItemKind::SitrusBerry.sprite_name(), Some("sitrus-berry"));
+        assert_eq!(ItemKind::SitrusBerry.fallback_emoji(), "🍊");
+        assert!(!ItemKind::SitrusBerry.is_passive());
     }
 
     #[test]

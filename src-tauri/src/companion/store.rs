@@ -18,8 +18,8 @@ use uuid::Uuid;
 use crate::domain::companion::{
     AppLanguage, CandyGrant, CandyWindow, CompanionState, CompanionStateKind, DexEntry, EvoLine,
     EvoLineItem, EvoLineItemContent, EvoLineItemState, EvoNode, FreshEgg, ItemKind, MonState,
-    PokemonAssets, PokemonBalance, PokemonNature, PokemonOdds, RareCandy, Rarity, ShinyCharm,
-    ShopEntry, WindowClass,
+    OranBerry, PokemonAssets, PokemonBalance, PokemonNature, PokemonOdds, RareCandy, Rarity,
+    ShinyCharm, ShopEntry, SitrusBerry, WindowClass,
 };
 use crate::domain::save::{SaveEnvelope, SaveSummary, SaveTransfer, SaveTransferError};
 use crate::platform::{self, app_env};
@@ -141,6 +141,9 @@ pub struct CompanionStore {
     pub candy_feedback_amount: i64,
     pub mint_feedback_seq: u64,
     pub mint_feedback_nature: Option<PokemonNature>,
+    pub berry_feedback_seq: u64,
+    pub berry_feedback_kind: Option<String>,
+    pub golden_aura_until: Option<DateTime<Utc>>,
     provider: Box<dyn PokeProvider>,
     clock: fn() -> DateTime<Utc>,
     file_url: PathBuf,
@@ -187,6 +190,9 @@ impl CompanionStore {
             candy_feedback_amount: 0,
             mint_feedback_seq: 0,
             mint_feedback_nature: None,
+            berry_feedback_seq: 0,
+            berry_feedback_kind: None,
+            golden_aura_until: None,
             provider,
             clock,
             file_url,
@@ -665,6 +671,91 @@ impl CompanionStore {
 
     pub fn consume_candy_feedback(&mut self) {
         self.candy_feedback_amount = 0;
+    }
+
+    // MARK: berries (Oran & Sitrus feeding)
+
+    pub fn can_use_oran_berry(&self) -> bool {
+        self.has_active() && self.current_line.is_some() && self.item_count(ItemKind::OranBerry) > 0
+    }
+
+    /// Feeds one Oran Berry (+15M XP). Boosts mood and happiness!
+    pub fn use_oran_berry(&mut self) -> CandyUseResult {
+        if !self.can_use_oran_berry() {
+            return CandyUseResult::Unavailable;
+        }
+        *self
+            .state
+            .inventory
+            .entry(ItemKind::OranBerry.raw_value().to_string())
+            .or_insert(0) -= 1;
+        let before_stage = self
+            .state
+            .active
+            .as_ref()
+            .map(|a| a.stage_index)
+            .unwrap_or(0);
+        self.candy_feedback_amount = OranBerry::XP;
+        self.candy_feedback_seq += 1;
+        self.berry_feedback_kind = Some("oranBerry".to_string());
+        self.berry_feedback_seq += 1;
+        self.apply_usage(OranBerry::XP);
+        if self.state.active.is_none() {
+            return CandyUseResult::Graduated;
+        }
+        if self.state.active.as_ref().unwrap().stage_index > before_stage {
+            return CandyUseResult::Evolved;
+        }
+        CandyUseResult::Progressed
+    }
+
+    pub fn can_use_sitrus_berry(&self) -> bool {
+        self.has_active()
+            && self.current_line.is_some()
+            && self.item_count(ItemKind::SitrusBerry) > 0
+    }
+
+    /// Feeds one Sitrus Berry (+50M XP + 1-hour Golden Sparkle Aura!).
+    pub fn use_sitrus_berry(&mut self) -> CandyUseResult {
+        if !self.can_use_sitrus_berry() {
+            return CandyUseResult::Unavailable;
+        }
+        *self
+            .state
+            .inventory
+            .entry(ItemKind::SitrusBerry.raw_value().to_string())
+            .or_insert(0) -= 1;
+        let before_stage = self
+            .state
+            .active
+            .as_ref()
+            .map(|a| a.stage_index)
+            .unwrap_or(0);
+        self.candy_feedback_amount = SitrusBerry::XP;
+        self.candy_feedback_seq += 1;
+        self.berry_feedback_kind = Some("sitrusBerry".to_string());
+        self.berry_feedback_seq += 1;
+        self.golden_aura_until = Some((self.clock)() + chrono::Duration::seconds(3600));
+        self.apply_usage(SitrusBerry::XP);
+        if self.state.active.is_none() {
+            return CandyUseResult::Graduated;
+        }
+        if self.state.active.as_ref().unwrap().stage_index > before_stage {
+            return CandyUseResult::Evolved;
+        }
+        CandyUseResult::Progressed
+    }
+
+    pub fn has_golden_aura(&self) -> bool {
+        if let Some(until) = self.golden_aura_until {
+            (self.clock)() < until
+        } else {
+            false
+        }
+    }
+
+    pub fn consume_berry_feedback(&mut self) {
+        self.berry_feedback_kind = None;
     }
 
     // MARK: mint (nature reroll)
@@ -2842,7 +2933,13 @@ mod tests {
         let items = wallet_store(0, 0, &[]).purchasable_items();
         assert_eq!(
             items,
-            vec![ItemKind::Mint, ItemKind::RareCandy, ItemKind::ShinyCharm]
+            vec![
+                ItemKind::OranBerry,
+                ItemKind::Mint,
+                ItemKind::SitrusBerry,
+                ItemKind::RareCandy,
+                ItemKind::ShinyCharm
+            ]
         );
     }
 
@@ -2898,7 +2995,9 @@ mod tests {
         assert_eq!(
             s.shop_entries(),
             vec![
+                ShopEntry::Item(ItemKind::OranBerry),
                 ShopEntry::Item(ItemKind::Mint),
+                ShopEntry::Item(ItemKind::SitrusBerry),
                 ShopEntry::Item(ItemKind::RareCandy),
                 ShopEntry::Egg(None),
                 ShopEntry::Egg(Some(Rarity::Uncommon)),
@@ -2915,7 +3014,9 @@ mod tests {
         assert_eq!(
             s.shop_entries(),
             vec![
+                ShopEntry::Item(ItemKind::OranBerry),
                 ShopEntry::Item(ItemKind::Mint),
+                ShopEntry::Item(ItemKind::SitrusBerry),
                 ShopEntry::Item(ItemKind::RareCandy),
                 ShopEntry::Item(ItemKind::ShinyCharm),
             ]
@@ -3915,6 +4016,37 @@ mod tests {
             kind,
             utilization,
         }
+    }
+
+    #[test]
+    fn test_use_oran_berry_and_sitrus_berry() {
+        let mut s = store_for(linear3(), vec![1, 2, 3, 4, 5, 6]);
+        s.hatch(1);
+        s.state
+            .inventory
+            .insert(ItemKind::OranBerry.raw_value().to_string(), 2);
+        s.state
+            .inventory
+            .insert(ItemKind::SitrusBerry.raw_value().to_string(), 1);
+
+        assert!(s.can_use_oran_berry());
+        assert!(s.can_use_sitrus_berry());
+        assert!(!s.has_golden_aura());
+
+        // Use Oran Berry (+15M XP)
+        let res = s.use_oran_berry();
+        assert_eq!(res, CandyUseResult::Progressed);
+        assert_eq!(s.item_count(ItemKind::OranBerry), 1);
+        assert_eq!(s.state.active.as_ref().unwrap().used_at_stage, 15_000_000);
+        assert_eq!(s.berry_feedback_kind.as_deref(), Some("oranBerry"));
+
+        // Use Sitrus Berry (+50M XP + Golden Aura)
+        let res2 = s.use_sitrus_berry();
+        assert_eq!(res2, CandyUseResult::Progressed);
+        assert_eq!(s.item_count(ItemKind::SitrusBerry), 0);
+        assert_eq!(s.state.active.as_ref().unwrap().used_at_stage, 65_000_000);
+        assert_eq!(s.berry_feedback_kind.as_deref(), Some("sitrusBerry"));
+        assert!(s.has_golden_aura());
     }
 
     impl CompanionStore {

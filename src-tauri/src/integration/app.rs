@@ -89,6 +89,8 @@ pub struct CompanionView {
     pub celebration_seq: u64,
     pub candy_feedback: Option<i64>,
     pub mint_feedback: Option<String>,
+    pub berry_feedback: Option<String>,
+    pub has_golden_aura: bool,
     pub just_evolved_to: Option<String>,
     pub just_graduated: Option<String>,
 }
@@ -288,6 +290,8 @@ fn build_snapshot(inner: &StateInner) -> Snapshot {
         mint_feedback: c
             .mint_feedback_nature
             .map(|n| n.name(c.language()).to_string()),
+        berry_feedback: c.berry_feedback_kind.clone(),
+        has_golden_aura: c.has_golden_aura(),
         just_evolved_to: c.just_evolved_to.clone(),
         just_graduated: c.just_graduated.clone(),
     };
@@ -458,6 +462,43 @@ pub async fn use_mint(state: State<'_, AppState>) -> Result<Snapshot, String> {
 }
 
 #[tauri::command]
+pub async fn use_berry(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    kind: String,
+) -> Result<Snapshot, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut inner = state.lock().map_err(|e| e.to_string())?;
+        let prev_seq = inner.companion.celebration_seq;
+        match kind.as_str() {
+            "oranBerry" => {
+                inner.companion.use_oran_berry();
+            }
+            "sitrusBerry" => {
+                inner.companion.use_sitrus_berry();
+            }
+            _ => return Err("unknown berry kind".to_string()),
+        }
+        if inner.companion.celebration_seq > prev_seq {
+            if let Some(Celebration::Evolve) = inner.companion.celebration {
+                crate::integration::notify::send_notification(
+                    &app,
+                    "Pokémon Evolved! 🌟",
+                    &format!(
+                        "Your partner evolved into {}!",
+                        inner.companion.display_name()
+                    ),
+                );
+            }
+        }
+        Ok(build_snapshot(&inner))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn buy_egg(state: State<'_, AppState>, tier: Option<String>) -> Result<Snapshot, String> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -491,6 +532,7 @@ pub fn consume_feedback(state: State<'_, AppState>) -> Result<Snapshot, String> 
     let mut inner = state.lock().map_err(|e| e.to_string())?;
     inner.companion.consume_candy_feedback();
     inner.companion.consume_mint_feedback();
+    inner.companion.consume_berry_feedback();
     Ok(build_snapshot(&inner))
 }
 
@@ -570,6 +612,8 @@ fn parse_item_kind(s: &str) -> Option<ItemKind> {
     match s {
         "rareCandy" => Some(ItemKind::RareCandy),
         "mint" => Some(ItemKind::Mint),
+        "oranBerry" => Some(ItemKind::OranBerry),
+        "sitrusBerry" => Some(ItemKind::SitrusBerry),
         "shinyCharm" => Some(ItemKind::ShinyCharm),
         _ => None,
     }

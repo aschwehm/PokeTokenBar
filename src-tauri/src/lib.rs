@@ -49,6 +49,7 @@ pub fn run() {
             integration::app::buy_item,
             integration::app::use_rare_candy,
             integration::app::use_mint,
+            integration::app::use_berry,
             integration::app::buy_egg,
             integration::app::set_language,
             integration::app::consume_celebration,

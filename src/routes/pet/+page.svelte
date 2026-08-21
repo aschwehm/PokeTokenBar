@@ -13,10 +13,13 @@
     displayState: string;
     progress: number;
     eggProgress: number;
+    hasGoldenAura?: boolean;
+    berryFeedback?: string | null;
   }
 
   interface UsageView {
     burnTier: string;
+    todayTotalTokens: number;
   }
 
   interface Snapshot {
@@ -24,22 +27,157 @@
     usage: UsageView;
   }
 
+  interface HeartParticle {
+    id: number;
+    emoji: string;
+    x: number;
+    y: number;
+    scale: number;
+  }
+
   let snap = $state<Snapshot | null>(null);
+
+  // Interaction State
+  let animState = $state<"normal" | "hop" | "backflip" | "wiggle" | "wake" | "eating">("normal");
+  let hearts = $state<HeartParticle[]>([]);
+  let heartSeq = 0;
+  let animTimeout: ReturnType<typeof setTimeout> | null = null;
+  let isWakingUp = $state(false);
+  let wasSleeping = $state(false);
+
+  // Drag vs Click detection
+  let pointerDownX = 0;
+  let pointerDownY = 0;
+  let pointerDownTime = 0;
+
+  // Track idle sleep (15 minutes idle override)
+  let lastActiveTimestamp = $state(Date.now());
+  let lastTokenCount = $state(0);
+
+  let isSleeping = $derived.by(() => {
+    if (!snap) return false;
+    if (snap.companion.isEgg) return false;
+    if (isWakingUp) return false;
+    if (snap.companion.displayState === "sleep") return true;
+    if (snap.usage.burnTier === "idle" && Date.now() - lastActiveTimestamp > 15 * 60 * 1000) {
+      return true;
+    }
+    return false;
+  });
 
   async function refresh() {
     try {
+      const prev = snap;
       snap = await invoke<Snapshot>("snapshot");
+
+      if (snap) {
+        // Track token changes to update last activity
+        if (snap.usage.todayTotalTokens !== lastTokenCount) {
+          lastTokenCount = snap.usage.todayTotalTokens;
+          lastActiveTimestamp = Date.now();
+          if (wasSleeping) {
+            triggerWakeUp();
+          }
+        }
+
+        if (snap.usage.burnTier !== "idle") {
+          lastActiveTimestamp = Date.now();
+          if (wasSleeping) {
+            triggerWakeUp();
+          }
+        }
+
+        // Berry eating feedback from backend
+        if (snap.companion.berryFeedback) {
+          triggerEatingAnimation(snap.companion.berryFeedback);
+          invoke("consume_feedback").catch(() => {});
+        }
+
+        wasSleeping = isSleeping;
+      }
     } catch {
       // ignore
     }
   }
 
-  async function startDrag(e: MouseEvent) {
+  function triggerWakeUp() {
+    isWakingUp = true;
+    playAnimation("wake");
+    spawnHearts(["✨", "⭐", "❗"]);
+    setTimeout(() => {
+      isWakingUp = false;
+    }, 1800);
+  }
+
+  function triggerEatingAnimation(kind: string) {
+    lastActiveTimestamp = Date.now();
+    playAnimation("eating");
+    const emoji = kind === "sitrusBerry" ? "🍊" : "🫐";
+    spawnHearts([emoji, "✨", "💖", "😋"]);
+  }
+
+  function playAnimation(anim: "hop" | "backflip" | "wiggle" | "wake" | "eating") {
+    if (animTimeout) clearTimeout(animTimeout);
+    animState = anim;
+    const duration = anim === "backflip" ? 750 : anim === "wake" ? 1000 : anim === "eating" ? 900 : 600;
+    animTimeout = setTimeout(() => {
+      animState = "normal";
+    }, duration);
+  }
+
+  function spawnHearts(customEmojis?: string[]) {
+    const emojis = customEmojis ?? ["❤️", "💖", "✨", "🥰", "⭐"];
+    const count = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      const particle: HeartParticle = {
+        id: ++heartSeq,
+        emoji: emojis[Math.floor(Math.random() * emojis.length)],
+        x: (Math.random() - 0.5) * 50,
+        y: -10 - Math.random() * 25,
+        scale: 0.8 + Math.random() * 0.5,
+      };
+      hearts = [...hearts, particle];
+      setTimeout(() => {
+        hearts = hearts.filter((h) => h.id !== particle.id);
+      }, 1200);
+    }
+  }
+
+  // Interactive Petting Handler
+  function handlePetInteraction() {
+    lastActiveTimestamp = Date.now();
+    if (isSleeping) {
+      triggerWakeUp();
+      return;
+    }
+
+    // Pick between hop, backflip, and wiggle
+    const rolls: Array<"hop" | "backflip" | "wiggle"> = ["hop", "backflip", "wiggle", "hop"];
+    const chosen = rolls[Math.floor(Math.random() * rolls.length)];
+    playAnimation(chosen);
+    spawnHearts();
+  }
+
+  function handleMouseDown(e: MouseEvent) {
     if (e.button === 0) {
+      pointerDownX = e.clientX;
+      pointerDownY = e.clientY;
+      pointerDownTime = Date.now();
       try {
-        await getCurrentWindow().startDragging();
+        getCurrentWindow().startDragging();
       } catch {
         // ignore
+      }
+    }
+  }
+
+  function handleMouseUp(e: MouseEvent) {
+    if (e.button === 0) {
+      const dist = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
+      const elapsed = Date.now() - pointerDownTime;
+      // If moved < 6px and held < 350ms, it was a click/pet!
+      if (dist < 6 && elapsed < 350) {
+        handlePetInteraction();
       }
     }
   }
@@ -61,6 +199,7 @@
     const unlisten = listen("tray-refresh", refresh);
     return () => {
       clearInterval(interval);
+      if (animTimeout) clearTimeout(animTimeout);
       unlisten.then((f) => f());
     };
   });
@@ -69,7 +208,8 @@
 <div
   class="pet-container"
   data-tauri-drag-region
-  onmousedown={startDrag}
+  onmousedown={handleMouseDown}
+  onmouseup={handleMouseUp}
   role="toolbar"
   tabindex="-1"
   aria-label="Desktop Pet"
@@ -80,9 +220,16 @@
     {@const currentProg = Math.max(0, Math.min(1, c.isEgg ? c.eggProgress : c.progress))}
     {@const circ = 326.73}
     {@const strokeDash = circ * (1 - currentProg)}
+    {@const hasGoldenAura = c.hasGoldenAura}
 
-    <div class="pet-wrapper" class:blazing={u.burnTier === "blazing"} class:focus={u.burnTier === "fast"}>
-      <!-- Circular Progress Ring (circumference) -->
+    <div
+      class="pet-wrapper"
+      class:blazing={u.burnTier === "blazing"}
+      class:focus={u.burnTier === "fast"}
+      class:sleeping={isSleeping}
+      class:golden-aura={hasGoldenAura}
+    >
+      <!-- Circular Progress Ring -->
       <svg class="progress-ring" viewBox="0 0 116 116">
         <defs>
           <linearGradient id="ring-grad-default" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -97,15 +244,18 @@
             <stop offset="0%" stop-color="#FF8A59" />
             <stop offset="100%" stop-color="#E3372E" />
           </linearGradient>
+          <linearGradient id="ring-grad-sleep" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#818CF8" />
+            <stop offset="100%" stop-color="#C084FC" />
+          </linearGradient>
+          <linearGradient id="ring-grad-gold" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#FCD34D" />
+            <stop offset="100%" stop-color="#F59E0B" />
+          </linearGradient>
         </defs>
 
         <!-- Track Ring -->
-        <circle
-          cx="58"
-          cy="58"
-          r="52"
-          class="ring-track"
-        />
+        <circle cx="58" cy="58" r="52" class="ring-track" />
 
         <!-- Progress Fill Ring -->
         <circle
@@ -113,33 +263,80 @@
           cy="58"
           r="52"
           class="ring-progress-fill"
-          stroke={c.isEgg ? "url(#ring-grad-egg)" : u.burnTier === "blazing" ? "url(#ring-grad-blazing)" : "url(#ring-grad-default)"}
+          stroke={hasGoldenAura
+            ? "url(#ring-grad-gold)"
+            : isSleeping
+            ? "url(#ring-grad-sleep)"
+            : c.isEgg
+            ? "url(#ring-grad-egg)"
+            : u.burnTier === "blazing"
+            ? "url(#ring-grad-blazing)"
+            : "url(#ring-grad-default)"}
           stroke-dasharray="326.73"
           stroke-dashoffset={strokeDash}
         />
       </svg>
 
-      <!-- Center Sprite Area (Unobstructed!) -->
+      <!-- Center Sprite Area (Interactive!) -->
       <div class="sprite-stage">
         {#if c.isEgg}
-          <div class="egg-sprite">🥚</div>
+          <div class="egg-sprite" class:hop={animState === "hop"}>🥚</div>
         {:else if c.hasActive && c.currentSpeciesId}
           <img
             class="sprite"
             class:bounce={u.burnTier === "fast" || u.burnTier === "blazing"}
+            class:sleeping-mon={isSleeping}
+            class:hop={animState === "hop"}
+            class:backflip={animState === "backflip"}
+            class:wiggle={animState === "wiggle"}
+            class:wake-up={animState === "wake"}
+            class:eating={animState === "eating"}
             src={spriteUrl(c.currentSpeciesId, c.isShiny)}
             alt={c.displayName}
             draggable="false"
             onerror={(e) => fallbackStaticSprite(e, c.currentSpeciesId ?? 1, c.isShiny)}
           />
         {/if}
+
+        <!-- Floating Zzz Sleep Bubbles -->
+        {#if isSleeping}
+          <div class="zzz-container">
+            <span class="zzz zzz-1">z</span>
+            <span class="zzz zzz-2">Z</span>
+            <span class="zzz zzz-3">Z</span>
+            <span class="zzz zzz-4">💤</span>
+          </div>
+        {/if}
+
+        <!-- Golden Sparkle Trail -->
+        {#if hasGoldenAura}
+          <div class="golden-sparkles-container">
+            <span class="sparkle sp-1">✨</span>
+            <span class="sparkle sp-2">⭐</span>
+            <span class="sparkle sp-3">✨</span>
+          </div>
+        {/if}
+
+        <!-- Floating Heart & Joy Particles -->
+        {#each hearts as h (h.id)}
+          <span
+            class="floating-heart"
+            style="--target-x: {h.x}px; --target-y: {h.y}px; --scale: {h.scale};"
+          >
+            {h.emoji}
+          </span>
+        {/each}
       </div>
 
-      <!-- Burn Pace Badge (Top-Right) -->
-      {#if u.burnTier === "blazing"}
-        <div class="flame-badge blazing-badge" title="On Fire!">🔥</div>
+      <!-- Burn Pace / Sleep Status Badge (Top-Right) -->
+      {#if isSleeping}
+        <div class="status-badge sleep-badge" title="Sleeping (Click to pet & wake up)">💤</div>
+      {:else if hasGoldenAura}
+        <div class="status-badge gold-badge" title="Sitrus Sparkle Aura Active! ✨">🌟</div>
+      {:else if u.burnTier === "blazing"}
+        <div class="status-badge blazing-badge" title="On Fire!">🔥</div>
       {:else if u.burnTier === "fast"}
-        <div class="flame-badge fast-badge" title="Fast Pace">⚡</div>
+        <div class="status-badge fast-badge" title="Fast Pace">⚡</div>
       {/if}
     </div>
   {/if}
@@ -182,20 +379,35 @@
     background: rgba(14, 16, 22, 0.88);
     backdrop-filter: blur(14px);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), inset 0 0 10px rgba(255, 255, 255, 0.04);
-    transition: transform 0.2s ease, box-shadow 0.25s ease;
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
   }
 
   .pet-wrapper:hover {
-    transform: scale(1.05);
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65), inset 0 0 12px rgba(255, 255, 255, 0.08);
+    transform: scale(1.06);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65), inset 0 0 14px rgba(255, 255, 255, 0.1);
   }
 
   .pet-wrapper.focus {
-    box-shadow: 0 0 16px rgba(232, 184, 75, 0.5), inset 0 0 12px rgba(232, 184, 75, 0.15);
+    box-shadow: 0 0 18px rgba(232, 184, 75, 0.5), inset 0 0 12px rgba(232, 184, 75, 0.15);
   }
 
   .pet-wrapper.blazing {
-    box-shadow: 0 0 18px rgba(227, 55, 45, 0.6), inset 0 0 14px rgba(227, 55, 45, 0.2);
+    box-shadow: 0 0 20px rgba(227, 55, 45, 0.6), inset 0 0 14px rgba(227, 55, 45, 0.2);
+  }
+
+  .pet-wrapper.sleeping {
+    box-shadow: 0 0 18px rgba(129, 140, 248, 0.45), inset 0 0 12px rgba(129, 140, 248, 0.15);
+    background: rgba(16, 17, 28, 0.9);
+  }
+
+  .pet-wrapper.golden-aura {
+    box-shadow: 0 0 22px rgba(245, 158, 11, 0.65), inset 0 0 14px rgba(252, 211, 77, 0.25);
+    animation: goldPulse 2.5s infinite ease-in-out;
+  }
+
+  @keyframes goldPulse {
+    0%, 100% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.6), inset 0 0 12px rgba(252, 211, 77, 0.2); }
+    50% { box-shadow: 0 0 28px rgba(245, 158, 11, 0.85), inset 0 0 18px rgba(252, 211, 77, 0.4); }
   }
 
   /* SVG Perimeter Progress Ring */
@@ -220,11 +432,12 @@
     stroke-linecap: round;
     transform: rotate(-90deg);
     transform-origin: 58px 58px;
-    transition: stroke-dashoffset 0.4s ease;
+    transition: stroke-dashoffset 0.4s ease, stroke 0.3s ease;
   }
 
   /* Sprite Area */
   .sprite-stage {
+    position: relative;
     width: 86px;
     height: 86px;
     display: flex;
@@ -243,8 +456,93 @@
     object-fit: contain;
     image-rendering: pixelated;
     filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+    transform-origin: center bottom;
   }
 
+  /* Animations */
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+  }
+
+  .bounce {
+    animation: bounce 0.8s infinite ease-in-out;
+  }
+
+  /* Sleep Breathing */
+  @keyframes sleepBreath {
+    0%, 100% { transform: translateY(2px) scale(0.96) rotate(-2deg); opacity: 0.85; }
+    50% { transform: translateY(0px) scale(1) rotate(1deg); opacity: 0.95; }
+  }
+
+  .sleeping-mon {
+    animation: sleepBreath 3.2s infinite ease-in-out !important;
+  }
+
+  /* Hop Interaction */
+  @keyframes petHop {
+    0% { transform: scale(1, 1) translateY(0); }
+    30% { transform: scale(1.15, 0.85) translateY(0); }
+    50% { transform: scale(0.9, 1.15) translateY(-14px); }
+    75% { transform: scale(1.05, 0.95) translateY(-2px); }
+    100% { transform: scale(1, 1) translateY(0); }
+  }
+
+  .sprite.hop, .egg-sprite.hop {
+    animation: petHop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  }
+
+  /* Backflip Interaction */
+  @keyframes petBackflip {
+    0% { transform: translateY(0) rotate(0deg) scale(1); }
+    35% { transform: translateY(-18px) rotate(-140deg) scale(1.1); }
+    70% { transform: translateY(-10px) rotate(-300deg) scale(1.05); }
+    100% { transform: translateY(0) rotate(-360deg) scale(1); }
+  }
+
+  .sprite.backflip {
+    animation: petBackflip 0.72s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  }
+
+  /* Wiggle Interaction */
+  @keyframes petWiggle {
+    0%, 100% { transform: rotate(0deg) scale(1); }
+    20% { transform: rotate(-12deg) scale(1.08); }
+    40% { transform: rotate(12deg) scale(1.08); }
+    60% { transform: rotate(-8deg) scale(1.05); }
+    80% { transform: rotate(8deg) scale(1.05); }
+  }
+
+  .sprite.wiggle {
+    animation: petWiggle 0.6s ease-in-out !important;
+  }
+
+  /* Wake Up Pop */
+  @keyframes wakePop {
+    0% { transform: scale(0.85) translateY(4px); }
+    40% { transform: scale(1.22) translateY(-12px); }
+    70% { transform: scale(0.95) translateY(2px); }
+    100% { transform: scale(1) translateY(0); }
+  }
+
+  .sprite.wake-up {
+    animation: wakePop 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  }
+
+  /* Eating Animation */
+  @keyframes eatingNom {
+    0%, 100% { transform: scale(1); }
+    25% { transform: scale(1.15, 0.88) translateY(2px); }
+    50% { transform: scale(0.92, 1.12) translateY(-4px); }
+    75% { transform: scale(1.1, 0.92) translateY(1px); }
+  }
+
+  .sprite.eating {
+    animation: eatingNom 0.8s ease-in-out !important;
+  }
+
+  /* Egg wobble */
   .egg-sprite {
     font-size: 48px;
     line-height: 1;
@@ -258,7 +556,80 @@
     75% { transform: rotate(6deg); }
   }
 
-  .flame-badge {
+  /* Floating Zzz Bubbles */
+  .zzz-container {
+    position: absolute;
+    top: -12px;
+    right: 2px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
+  }
+
+  .zzz {
+    position: absolute;
+    color: #C084FC;
+    font-family: system-ui, sans-serif;
+    font-weight: 800;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+    opacity: 0;
+    animation: floatZzz 3.2s infinite cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  .zzz-1 { font-size: 11px; animation-delay: 0s; }
+  .zzz-2 { font-size: 14px; animation-delay: 0.8s; }
+  .zzz-3 { font-size: 17px; animation-delay: 1.6s; }
+  .zzz-4 { font-size: 18px; animation-delay: 2.4s; }
+
+  @keyframes floatZzz {
+    0% { transform: translate(0, 0) scale(0.6); opacity: 0; }
+    20% { opacity: 0.9; }
+    80% { opacity: 0.7; }
+    100% { transform: translate(14px, -32px) scale(1.15); opacity: 0; }
+  }
+
+  /* Golden Sparkles Trail */
+  .golden-sparkles-container {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .sparkle {
+    position: absolute;
+    font-size: 14px;
+    animation: floatSparkle 2s infinite ease-in-out;
+    filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.8));
+  }
+
+  .sp-1 { top: 4px; left: 6px; animation-delay: 0s; }
+  .sp-2 { top: 12px; right: 8px; animation-delay: 0.7s; font-size: 11px; }
+  .sp-3 { bottom: 8px; left: 14px; animation-delay: 1.3s; font-size: 12px; }
+
+  @keyframes floatSparkle {
+    0%, 100% { transform: scale(0.7) rotate(0deg); opacity: 0.3; }
+    50% { transform: scale(1.2) rotate(45deg); opacity: 1; }
+  }
+
+  /* Floating Pet Hearts / Particle FX */
+  .floating-heart {
+    position: absolute;
+    font-size: 18px;
+    pointer-events: none;
+    animation: heartFly 1.1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.6));
+    z-index: 10;
+  }
+
+  @keyframes heartFly {
+    0% { transform: translate(0, 0) scale(0.5); opacity: 0; }
+    25% { opacity: 1; transform: translate(calc(var(--target-x) * 0.4), calc(var(--target-y) * 0.4)) scale(var(--scale)); }
+    100% { transform: translate(var(--target-x), var(--target-y)) scale(calc(var(--scale) * 1.25)); opacity: 0; }
+  }
+
+  /* Badges */
+  .status-badge {
     position: absolute;
     top: -2px;
     right: -2px;
@@ -275,23 +646,27 @@
     z-index: 3;
   }
 
-  .flame-badge.blazing-badge {
+  .status-badge.blazing-badge {
     border-color: rgba(227, 55, 45, 0.7);
     box-shadow: 0 0 10px rgba(227, 55, 45, 0.5);
   }
 
-  .flame-badge.fast-badge {
+  .status-badge.fast-badge {
     border-color: rgba(232, 184, 75, 0.7);
     box-shadow: 0 0 10px rgba(232, 184, 75, 0.5);
   }
 
-  @keyframes bounce {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-4px); }
+  .status-badge.sleep-badge {
+    border-color: rgba(167, 139, 250, 0.7);
+    box-shadow: 0 0 10px rgba(167, 139, 250, 0.5);
+    background: #16182a;
   }
 
-  .bounce {
-    animation: bounce 0.8s infinite ease-in-out;
+  .status-badge.gold-badge {
+    border-color: rgba(245, 158, 11, 0.8);
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
+    background: #241c0e;
   }
 </style>
+
 
