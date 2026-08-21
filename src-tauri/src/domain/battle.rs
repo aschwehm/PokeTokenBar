@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum MoveCategory {
     Physical,
     Special,
@@ -14,6 +15,7 @@ pub enum MoveCategory {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BattleMove {
     pub id: String,
     pub name: String,
@@ -21,66 +23,95 @@ pub struct BattleMove {
     pub category: MoveCategory,
     pub power: u32,
     pub accuracy: u32,
+    #[serde(alias = "current_pp")]
     pub current_pp: u32,
+    #[serde(alias = "max_pp")]
     pub max_pp: u32,
     pub description: String,
     pub effect: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BattleFighter {
+    #[serde(alias = "species_id")]
     pub species_id: i64,
     pub name: String,
+    #[serde(alias = "is_shiny")]
     pub is_shiny: bool,
     pub level: u32,
     pub stage: u32,
+    #[serde(alias = "element_types")]
     pub element_types: Vec<String>,
+    #[serde(alias = "max_hp")]
     pub max_hp: u32,
+    #[serde(alias = "current_hp")]
     pub current_hp: u32,
     pub attack: u32,
     pub defense: u32,
+    #[serde(alias = "sp_attack")]
     pub sp_attack: u32,
+    #[serde(alias = "sp_defense")]
     pub sp_defense: u32,
     pub speed: u32,
+    #[serde(alias = "ribbon_count")]
     pub ribbon_count: u32,
+    #[serde(alias = "is_overdrive")]
     pub is_overdrive: bool,
+    #[serde(alias = "atk_stage")]
     pub atk_stage: i32,
+    #[serde(alias = "def_stage")]
     pub def_stage: i32,
     pub moves: Vec<BattleMove>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BattleLogEntry {
     pub id: String,
     pub text: String,
     pub actor: String, // "player" | "opponent" | "system"
     pub damage: Option<u32>,
+    #[serde(alias = "is_crit")]
     pub is_crit: bool,
     pub effectiveness: String, // "super" | "not_very" | "immune" | "normal"
     pub timestamp: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ActiveBattleState {
+    #[serde(alias = "battle_id")]
     pub battle_id: String,
+    #[serde(alias = "turn_count")]
     pub turn_count: u32,
     pub player: BattleFighter,
     pub opponent: BattleFighter,
+    #[serde(alias = "is_player_turn")]
     pub is_player_turn: bool,
+    #[serde(alias = "battle_phase")]
     pub battle_phase: String, // "selecting" | "resolving" | "won" | "lost" | "fled"
+    #[serde(alias = "battle_log")]
     pub battle_log: Vec<BattleLogEntry>,
+    #[serde(alias = "reward_bp")]
     pub reward_bp: u32,
+    #[serde(alias = "reward_coins")]
     pub reward_coins: u64,
     pub won: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BattleStatsRecord {
     pub wins: u32,
     pub losses: u32,
+    #[serde(alias = "win_streak")]
     pub win_streak: u32,
+    #[serde(alias = "best_streak")]
     pub best_streak: u32,
+    #[serde(alias = "total_battles")]
     pub total_battles: u32,
+    #[serde(alias = "total_bp_earned")]
     pub total_bp_earned: u32,
 }
 

@@ -849,6 +849,32 @@
     return { primary: defaultType, list: [defaultType] };
   }
 
+  const ELEMENT_COLORS: Record<string, { text: string; bg: string; border: string }> = {
+    normal: { text: "#A8A878", bg: "rgba(168,168,120,0.18)", border: "1px solid rgba(168,168,120,0.4)" },
+    fire: { text: "#F08030", bg: "rgba(240,128,48,0.18)", border: "1px solid rgba(240,128,48,0.4)" },
+    water: { text: "#6890F0", bg: "rgba(104,144,240,0.18)", border: "1px solid rgba(104,144,240,0.4)" },
+    grass: { text: "#78C850", bg: "rgba(120,200,80,0.18)", border: "1px solid rgba(120,200,80,0.4)" },
+    electric: { text: "#F8D030", bg: "rgba(248,208,48,0.18)", border: "1px solid rgba(248,208,48,0.4)" },
+    ice: { text: "#98D8D8", bg: "rgba(152,216,216,0.18)", border: "1px solid rgba(152,216,216,0.4)" },
+    fighting: { text: "#C03028", bg: "rgba(192,48,40,0.18)", border: "1px solid rgba(192,48,40,0.4)" },
+    poison: { text: "#A040A0", bg: "rgba(160,64,160,0.18)", border: "1px solid rgba(160,64,160,0.4)" },
+    ground: { text: "#E0C068", bg: "rgba(224,192,104,0.18)", border: "1px solid rgba(224,192,104,0.4)" },
+    flying: { text: "#A890F0", bg: "rgba(168,144,240,0.18)", border: "1px solid rgba(168,144,240,0.4)" },
+    psychic: { text: "#F85888", bg: "rgba(248,88,136,0.18)", border: "1px solid rgba(248,88,136,0.4)" },
+    bug: { text: "#A8B820", bg: "rgba(168,184,32,0.18)", border: "1px solid rgba(168,184,32,0.4)" },
+    rock: { text: "#B8A038", bg: "rgba(184,160,56,0.18)", border: "1px solid rgba(184,160,56,0.4)" },
+    ghost: { text: "#705898", bg: "rgba(112,88,152,0.18)", border: "1px solid rgba(112,88,152,0.4)" },
+    dragon: { text: "#7038F8", bg: "rgba(112,56,248,0.18)", border: "1px solid rgba(112,56,248,0.4)" },
+    dark: { text: "#705848", bg: "rgba(112,88,72,0.18)", border: "1px solid rgba(112,88,72,0.4)" },
+    steel: { text: "#B8B8D0", bg: "rgba(184,184,208,0.18)", border: "1px solid rgba(184,184,208,0.4)" },
+    fairy: { text: "#EE99AC", bg: "rgba(238,153,172,0.18)", border: "1px solid rgba(238,153,172,0.4)" },
+  };
+
+  function getElementColor(element: string): { text: string; bg: string; border: string } {
+    const key = element.toLowerCase();
+    return ELEMENT_COLORS[key] || ELEMENT_COLORS.normal;
+  }
+
   function getStageInfo(stageText: string, isFinal: boolean): { stage: number; total: number } {
     const match = stageText.match(/(\d+)\s*(?:\/|of)\s*(\d+)/i);
     if (match) {
@@ -2150,7 +2176,7 @@
 
                     <div class="moves-grid">
                       {#each b.player.moves as m, idx}
-                        {@const moveTypeInfo = getTypes(1).list.find(t => t.name.toLowerCase() === m.element.toLowerCase())}
+                        {@const elCol = getElementColor(m.element)}
                         <button
                           type="button"
                           class="move-btn"
@@ -2159,7 +2185,7 @@
                         >
                           <div class="move-btn-top">
                             <span class="move-name">{m.name}</span>
-                            <span class="move-type-pill" style="--move-type-col: {moveTypeInfo ? moveTypeInfo.text : '#fff'};">
+                            <span class="move-type-pill" style="color: {elCol.text}; background: {elCol.bg}; border: {elCol.border};">
                               {m.element}
                             </span>
                           </div>
