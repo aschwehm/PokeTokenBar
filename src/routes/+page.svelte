@@ -192,7 +192,7 @@
   }
   let heroHearts = $state<HeroHeart[]>([]);
   let heroHeartSeq = 0;
-  let heroAnimState = $state<"normal" | "hop" | "backflip" | "wiggle" | "wake" | "eating">("normal");
+  let heroAnimState = $state<"normal" | "hop" | "wiggle" | "wake" | "eating">("normal");
   let heroAnimTimeout: ReturnType<typeof setTimeout> | null = null;
   let heroWakeTimeout: ReturnType<typeof setTimeout> | null = null;
   let heroWakingUp = $state(false);
@@ -204,7 +204,7 @@
     return snap.companion.displayState === "sleep";
   });
 
-  function triggerHeroPet(specificAnim?: "hop" | "backflip" | "wiggle" | "wake" | "eating") {
+  function triggerHeroPet(specificAnim?: "hop" | "wiggle" | "wake" | "eating") {
     if (heroAnimTimeout) clearTimeout(heroAnimTimeout);
 
     if (isSleepingHero && !specificAnim) {
@@ -219,10 +219,10 @@
       return;
     }
 
-    const rolls: Array<"hop" | "backflip" | "wiggle"> = ["hop", "backflip", "wiggle", "hop"];
+    const rolls: Array<"hop" | "wiggle"> = ["hop", "wiggle", "hop", "wiggle"];
     const chosen = specificAnim ?? rolls[Math.floor(Math.random() * rolls.length)];
     heroAnimState = chosen;
-    const dur = chosen === "backflip" ? 750 : chosen === "eating" ? 900 : chosen === "wake" ? 1000 : 600;
+    const dur = chosen === "eating" ? 900 : chosen === "wake" ? 1000 : 600;
     heroAnimTimeout = setTimeout(() => {
       heroAnimState = "normal";
     }, dur);
@@ -956,7 +956,6 @@
                       class="hero-sprite"
                       class:bounce={u.burnTier === "fast" || u.burnTier === "blazing"}
                       class:hop={heroAnimState === "hop"}
-                      class:backflip={heroAnimState === "backflip"}
                       class:wiggle={heroAnimState === "wiggle"}
                       class:wake-up={heroAnimState === "wake"}
                       class:eating={heroAnimState === "eating"}
@@ -2959,10 +2958,6 @@
     animation: petHop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
   }
 
-  .hero-sprite.backflip {
-    animation: petBackflip 0.72s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-  }
-
   .hero-sprite.wiggle {
     animation: petWiggle 0.6s ease-in-out !important;
   }
@@ -3069,14 +3064,6 @@
     45% { transform: translateY(-16px) scale(0.9, 1.15); }
     70% { transform: translateY(-4px) scale(1.05, 0.95); }
     100% { transform: translateY(0) scale(1, 1); }
-  }
-
-  @keyframes petBackflip {
-    0% { transform: translateY(0) rotate(0deg) scale(1); }
-    20% { transform: translateY(3px) scale(1.15, 0.85); }
-    50% { transform: translateY(-20px) rotate(-180deg) scale(1.1); }
-    80% { transform: translateY(-2px) rotate(-360deg) scale(0.95, 1.05); }
-    100% { transform: translateY(0) rotate(-360deg) scale(1); }
   }
 
   @keyframes petWiggle {

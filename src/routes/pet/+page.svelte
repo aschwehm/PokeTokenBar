@@ -41,7 +41,7 @@
   let snap = $state<Snapshot | null>(null);
 
   // Interaction State
-  let animState = $state<"normal" | "hop" | "backflip" | "wiggle" | "wake" | "eating">("normal");
+  let animState = $state<"normal" | "hop" | "wiggle" | "wake" | "eating">("normal");
   let hearts = $state<HeartParticle[]>([]);
   let heartSeq = 0;
   let animTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -121,10 +121,10 @@
     spawnHearts([emoji, "✨", "💖", "😋"]);
   }
 
-  function playAnimation(anim: "hop" | "backflip" | "wiggle" | "wake" | "eating") {
+  function playAnimation(anim: "hop" | "wiggle" | "wake" | "eating") {
     if (animTimeout) clearTimeout(animTimeout);
     animState = anim;
-    const duration = anim === "backflip" ? 750 : anim === "wake" ? 1000 : anim === "eating" ? 900 : 600;
+    const duration = anim === "wake" ? 1000 : anim === "eating" ? 900 : 600;
     animTimeout = setTimeout(() => {
       animState = "normal";
     }, duration);
@@ -156,8 +156,8 @@
       return;
     }
 
-    // Pick between hop, backflip, and wiggle
-    const rolls: Array<"hop" | "backflip" | "wiggle"> = ["hop", "backflip", "wiggle", "hop"];
+    // Pick between hop and wiggle
+    const rolls: Array<"hop" | "wiggle"> = ["hop", "wiggle", "hop", "wiggle"];
     const chosen = rolls[Math.floor(Math.random() * rolls.length)];
     playAnimation(chosen);
     spawnHearts();
@@ -320,7 +320,6 @@
             class:bounce={u.burnTier === "fast" || u.burnTier === "blazing"}
             class:sleeping-mon={isSleeping}
             class:hop={animState === "hop"}
-            class:backflip={animState === "backflip"}
             class:wiggle={animState === "wiggle"}
             class:wake-up={animState === "wake"}
             class:eating={animState === "eating"}
@@ -539,18 +538,6 @@
 
   .sprite.hop, .egg-sprite.hop {
     animation: petHop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-  }
-
-  /* Backflip Interaction */
-  @keyframes petBackflip {
-    0% { transform: translateY(0) rotate(0deg) scale(1); }
-    35% { transform: translateY(-18px) rotate(-140deg) scale(1.1); }
-    70% { transform: translateY(-10px) rotate(-300deg) scale(1.05); }
-    100% { transform: translateY(0) rotate(-360deg) scale(1); }
-  }
-
-  .sprite.backflip {
-    animation: petBackflip 0.72s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
   }
 
   /* Wiggle Interaction */
