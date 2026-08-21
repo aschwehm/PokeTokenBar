@@ -95,6 +95,7 @@ pub struct CompanionView {
     pub mega_overdrive_enabled: bool,
     pub just_evolved_to: Option<String>,
     pub just_graduated: Option<String>,
+    pub ribbons: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -115,6 +116,7 @@ pub struct DexSpeciesView {
     pub rarity: &'static str,
     pub is_shiny: bool,
     pub is_raising: bool,
+    pub ribbons: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -254,6 +256,7 @@ fn build_snapshot(inner: &StateInner) -> Snapshot {
             rarity: rarity_str(d.rarity),
             is_shiny: d.is_shiny,
             is_raising: d.is_raising,
+            ribbons: d.ribbons,
         })
         .collect();
 
@@ -298,6 +301,7 @@ fn build_snapshot(inner: &StateInner) -> Snapshot {
         mega_overdrive_enabled: c.mega_overdrive_enabled,
         just_evolved_to: c.just_evolved_to.clone(),
         just_graduated: c.just_graduated.clone(),
+        ribbons: c.active_ribbons(),
     };
 
     let usage = UsageView {
@@ -541,6 +545,13 @@ pub fn set_mega_overdrive_enabled(
 pub fn consume_celebration(state: State<'_, AppState>) -> Result<Snapshot, String> {
     let mut inner = state.lock().map_err(|e| e.to_string())?;
     inner.companion.celebration = None;
+    Ok(build_snapshot(&inner))
+}
+
+#[tauri::command]
+pub fn pet_buddy(state: State<'_, AppState>) -> Result<Snapshot, String> {
+    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    inner.companion.pet_buddy();
     Ok(build_snapshot(&inner))
 }
 

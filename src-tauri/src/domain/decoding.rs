@@ -161,6 +161,18 @@ pub fn get_opt_i64_vec(m: &Map<String, Value>, key: &str) -> Option<Vec<i64>> {
     }
 }
 
+/// Optional array of String — empty Vec on missing / null.
+pub fn get_string_vec(m: &Map<String, Value>, key: &str) -> Vec<String> {
+    match m.get(key).and_then(Value::as_array) {
+        Some(arr) => arr
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect(),
+        None => Vec::new(),
+    }
+}
+
 /// Required Rarity raw-value — `Err` on missing / null / unknown value.
 pub fn get_required_rarity<E: de::Error>(m: &Map<String, Value>, key: &str) -> Result<Rarity, E> {
     m.get(key)

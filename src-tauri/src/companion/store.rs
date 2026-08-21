@@ -7,10 +7,10 @@
 //! [`PokeProvider`] trait and the fire-and-forget `Task { … }` launches become
 //! direct synchronous calls in the same method. No async / tokio.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Timelike, Utc};
 use rand::RngCore;
 use rand::SeedableRng;
 use uuid::Uuid;
@@ -110,6 +110,8 @@ pub struct DexSpecies {
     /// This cell's only basis is the currently-raised mon — not yet secured by
     /// a graduation record.
     pub is_raising: bool,
+    /// Earned ribbons for this species.
+    pub ribbons: Vec<String>,
 }
 
 /// Per-species accumulator for `dexSpecies` (species-level aggregation).
@@ -122,6 +124,7 @@ struct DexAccumulator {
     /// Has it ever come from a graduation record — once true the species is
     /// permanently preserved and never vanishes.
     is_graduated: bool,
+    ribbons: HashSet<String>,
 }
 
 /// The game-state machine. All methods are synchronous; network calls block
@@ -409,17 +412,20 @@ impl CompanionStore {
             }
             m
         });
-        Some(DexEntry::new(
-            active_entry_id(active.base_id, active.current_id()),
-            active.base_id,
-            active.current_id(),
-            active.path_ids.clone(),
-            active.rarity,
-            None,
-            self.current_is_shiny(), // disguised Ditto hides shiny before reveal
-            active.nature,
-            names,
-        ))
+        Some(
+            DexEntry::new(
+                active_entry_id(active.base_id, active.current_id()),
+                active.base_id,
+                active.current_id(),
+                active.path_ids.clone(),
+                active.rarity,
+                None,
+                self.current_is_shiny(), // disguised Ditto hides shiny before reveal
+                active.nature,
+                names,
+            )
+            .with_ribbons(active.ribbons.clone()),
+        )
     }
 
     pub fn dex_entries(&self) -> Vec<DexEntry> {
@@ -472,11 +478,12 @@ impl CompanionStore {
         let mut acc: HashMap<i64, DexAccumulator> = HashMap::new();
         for entry in &self.state.dex {
             for id in &entry.chain_order {
-                let a = acc.entry(*id).or_insert(DexAccumulator {
+                let a = acc.entry(*id).or_insert_with(|| DexAccumulator {
                     rarity: entry.rarity,
                     names: None,
                     is_shiny: false,
                     is_graduated: false,
+                    ribbons: HashSet::new(),
                 });
                 if let Some(n) = entry.names.as_ref().and_then(|m| m.get(id)) {
                     a.names = Some(n.clone()); // name-less legacy entries never overwrite
@@ -484,17 +491,21 @@ impl CompanionStore {
                 if entry.is_shiny {
                     a.is_shiny = true;
                 }
+                for r in &entry.ribbons {
+                    a.ribbons.insert(r.clone());
+                }
                 a.is_graduated = true;
             }
         }
         if let Some(active) = self.state.active.as_ref() {
             let reached = (active.stage_index as usize + 1).min(active.path_ids.len());
             for id in active.path_ids.iter().take(reached) {
-                let a = acc.entry(*id).or_insert(DexAccumulator {
+                let a = acc.entry(*id).or_insert_with(|| DexAccumulator {
                     rarity: active.rarity,
                     names: None,
                     is_shiny: false,
                     is_graduated: false,
+                    ribbons: HashSet::new(),
                 });
                 if let Some(n) = self
                     .current_line
@@ -505,6 +516,9 @@ impl CompanionStore {
                 }
                 if self.current_is_shiny() {
                     a.is_shiny = true; // reuse the disguise-hiding rule
+                }
+                for r in &active.ribbons {
+                    a.ribbons.insert(r.clone());
                 }
             }
         }
@@ -517,12 +531,15 @@ impl CompanionStore {
                     .and_then(|m| self.state.language.resolve_name(m))
                     .map(str::to_string)
                     .unwrap_or_else(|| format!("#{id}"));
+                let mut ribbons: Vec<String> = a.ribbons.into_iter().collect();
+                ribbons.sort();
                 DexSpecies {
                     id,
                     name,
                     rarity: a.rarity,
                     is_shiny: a.is_shiny,
                     is_raising: !a.is_graduated,
+                    ribbons,
                 }
             })
             .collect();
@@ -703,6 +720,9 @@ impl CompanionStore {
         self.candy_feedback_seq += 1;
         self.berry_feedback_kind = Some("oranBerry".to_string());
         self.berry_feedback_seq += 1;
+        if let Some(active) = self.state.active.as_mut() {
+            active.add_ribbon("gourmet");
+        }
         self.apply_usage(OranBerry::XP);
         if self.state.active.is_none() {
             return CandyUseResult::Graduated;
@@ -740,6 +760,9 @@ impl CompanionStore {
         self.berry_feedback_kind = Some("sitrusBerry".to_string());
         self.berry_feedback_seq += 1;
         self.golden_aura_until = Some((self.clock)() + chrono::Duration::seconds(3600));
+        if let Some(active) = self.state.active.as_mut() {
+            active.add_ribbon("gourmet");
+        }
         self.apply_usage(SitrusBerry::XP);
         if self.state.active.is_none() {
             return CandyUseResult::Graduated;
@@ -760,6 +783,54 @@ impl CompanionStore {
 
     pub fn consume_berry_feedback(&mut self) {
         self.berry_feedback_kind = None;
+    }
+
+    pub fn pet_buddy(&mut self) {
+        if let Some(active) = self.state.active.as_mut() {
+            active.add_ribbon("affection");
+            self.save();
+        }
+    }
+
+    pub fn active_ribbons(&self) -> Vec<String> {
+        let mut r = self
+            .state
+            .active
+            .as_ref()
+            .map(|a| a.ribbons.clone())
+            .unwrap_or_default();
+        r.sort();
+        r
+    }
+
+    pub fn check_and_award_ribbons(&mut self) {
+        let is_overdrive = self.is_mega_overdrive;
+        let hour = (self.clock)().time().hour();
+        if let Some(active) = self.state.active.as_mut() {
+            active.add_ribbon("starter");
+            if active.is_shiny {
+                active.add_ribbon("shiny");
+            }
+            if is_overdrive {
+                active.add_ribbon("overdrive");
+            }
+            if hour < 5 {
+                active.add_ribbon("nightOwl");
+            }
+            let cumulative = active.used_at_stage;
+            if cumulative >= 10_000_000 {
+                active.add_ribbon("bronzeBurner");
+            }
+            if cumulative >= 50_000_000 {
+                active.add_ribbon("silverBurner");
+            }
+            if cumulative >= 100_000_000 {
+                active.add_ribbon("goldBurner");
+            }
+            if cumulative >= 500_000_000 {
+                active.add_ribbon("platinumBurner");
+            }
+        }
     }
 
     pub fn set_mega_overdrive_enabled(&mut self, enabled: bool) {
@@ -1182,6 +1253,7 @@ impl CompanionStore {
             return;
         }
         self.state.active.as_mut().unwrap().used_at_stage += delta;
+        self.check_and_award_ribbons();
         let Some(line) = self.current_line.clone() else {
             self.save();
             return;
@@ -1393,17 +1465,24 @@ impl CompanionStore {
             }
             m
         });
-        self.state.dex.push(DexEntry::new(
-            Uuid::new_v4(),
-            active.base_id,
-            final_id,
-            active.path_ids.clone(),
-            active.rarity,
-            Some((self.clock)()),
-            active.is_shiny,
-            active.nature,
-            names,
-        ));
+        let mut final_ribbons = active.ribbons.clone();
+        if !final_ribbons.iter().any(|r| r == "graduate") {
+            final_ribbons.push("graduate".to_string());
+        }
+        self.state.dex.push(
+            DexEntry::new(
+                Uuid::new_v4(),
+                active.base_id,
+                final_id,
+                active.path_ids.clone(),
+                active.rarity,
+                Some((self.clock)()),
+                active.is_shiny,
+                active.nature,
+                names,
+            )
+            .with_ribbons(final_ribbons),
+        );
         let name = self
             .current_line
             .as_ref()
@@ -4127,6 +4206,43 @@ mod tests {
         assert!(s.is_mega_overdrive);
         // +100 delta * 2 multiplier = +200 coins -> total 400 available tokens
         assert_eq!(s.available_tokens(), 400);
+    }
+
+    #[test]
+    fn test_pokemon_ribbons_and_achievements() {
+        let mut s = store_for(linear3(), vec![1, 2, 3]);
+        s.hatch(1);
+
+        // 1. Initial hatch awards "starter" ribbon
+        let active_ribbons = s.active_ribbons();
+        assert!(active_ribbons.contains(&"starter".to_string()));
+
+        // 2. Petting buddy awards "affection" ribbon
+        s.pet_buddy();
+        assert!(s.active_ribbons().contains(&"affection".to_string()));
+
+        // 3. Feeding berry awards "gourmet" ribbon and milestone ribbons
+        s.state
+            .inventory
+            .insert(ItemKind::SitrusBerry.raw_value().to_string(), 2);
+        s.use_sitrus_berry(); // +50M XP
+        let ribbons_after_berry = s.active_ribbons();
+        assert!(ribbons_after_berry.contains(&"gourmet".to_string()));
+        assert!(ribbons_after_berry.contains(&"bronzeBurner".to_string()));
+        assert!(ribbons_after_berry.contains(&"silverBurner".to_string()));
+
+        // 4. Overdrive sprint awards "overdrive" ribbon
+        s.set_mega_overdrive_enabled(true);
+        s.is_mega_overdrive = true;
+        s.apply_usage(100);
+        assert!(s.active_ribbons().contains(&"overdrive".to_string()));
+
+        // 5. Dex species captures accumulated ribbons
+        let dex_species = s.dex_species();
+        let mon = dex_species.iter().find(|d| d.id == 1).unwrap();
+        assert!(mon.ribbons.contains(&"starter".to_string()));
+        assert!(mon.ribbons.contains(&"affection".to_string()));
+        assert!(mon.ribbons.contains(&"gourmet".to_string()));
     }
 
     impl CompanionStore {

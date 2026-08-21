@@ -161,6 +161,7 @@
     const chosen = rolls[Math.floor(Math.random() * rolls.length)];
     playAnimation(chosen);
     spawnHearts();
+    invoke<Snapshot>("pet_buddy").then((s) => { if (s) snap = s; }).catch(() => {});
   }
 
   function handleMouseDown(e: MouseEvent) {

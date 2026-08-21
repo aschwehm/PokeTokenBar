@@ -17,7 +17,8 @@ use uuid::Uuid;
 use crate::domain::decoding::{
     get_bool, get_i64, get_language, get_opt_i64, get_opt_i64_vec, get_opt_nature,
     get_opt_species_names, get_opt_string, get_rarity, get_required_i64, get_required_i64_vec,
-    get_required_rarity, get_string, get_string_i64_map, get_string_set, parse_iso8601,
+    get_required_rarity, get_string, get_string_i64_map, get_string_set, get_string_vec,
+    parse_iso8601,
 };
 
 /// Display state — derived from usage/burn (sprite motion intensity, status copy).
@@ -768,6 +769,9 @@ pub struct MonState {
     /// Disguise → reveal transition.
     #[serde(rename = "dittoRevealed")]
     pub ditto_revealed: bool,
+    /// Earned trainer / companionship ribbons.
+    #[serde(default, rename = "ribbons")]
+    pub ribbons: Vec<String>,
 }
 
 impl MonState {
@@ -789,6 +793,10 @@ impl MonState {
             Some(plan) if !plan.is_empty() => plan,
             _ => path_ids.clone(),
         };
+        let mut ribbons = vec!["starter".to_string()];
+        if is_shiny {
+            ribbons.push("shiny".to_string());
+        }
         Self {
             base_id,
             path_ids,
@@ -801,6 +809,21 @@ impl MonState {
             nature,
             ditto_disguise,
             ditto_revealed,
+            ribbons,
+        }
+    }
+
+    pub fn with_ribbons(mut self, ribbons: Vec<String>) -> Self {
+        self.ribbons = ribbons;
+        self
+    }
+
+    pub fn add_ribbon(&mut self, ribbon: &str) -> bool {
+        if !self.ribbons.iter().any(|r| r == ribbon) {
+            self.ribbons.push(ribbon.to_string());
+            true
+        } else {
+            false
         }
     }
 
@@ -842,6 +865,13 @@ impl<'de> Deserialize<'de> for MonState {
         let used_at_stage = get_required_i64(m, "usedAtStage")?;
         let rarity = get_required_rarity(m, "rarity")?;
         let total_forms = get_required_i64(m, "totalForms")?;
+        let mut ribbons = get_string_vec(m, "ribbons");
+        if ribbons.is_empty() {
+            ribbons.push("starter".to_string());
+            if get_bool(m, "isShiny") {
+                ribbons.push("shiny".to_string());
+            }
+        }
         Ok(Self {
             base_id,
             path_ids,
@@ -854,6 +884,7 @@ impl<'de> Deserialize<'de> for MonState {
             nature: get_opt_nature(m, "nature"),
             ditto_disguise: get_opt_i64(m, "dittoDisguise"),
             ditto_revealed: get_bool(m, "dittoRevealed"),
+            ribbons,
         })
     }
 }
@@ -883,6 +914,9 @@ pub struct DexEntry {
     /// Older saves lack it (nil) and the view backfills via a line fetch.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub names: Option<HashMap<i64, HashMap<String, String>>>,
+    /// Earned ribbons for this species.
+    #[serde(default, rename = "ribbons")]
+    pub ribbons: Vec<String>,
 }
 
 impl DexEntry {
@@ -898,6 +932,10 @@ impl DexEntry {
         nature: Option<PokemonNature>,
         names: Option<HashMap<i64, HashMap<String, String>>>,
     ) -> Self {
+        let mut ribbons = vec!["starter".to_string(), "graduate".to_string()];
+        if is_shiny {
+            ribbons.push("shiny".to_string());
+        }
         Self {
             id,
             base_id,
@@ -908,7 +946,13 @@ impl DexEntry {
             is_shiny,
             nature,
             names,
+            ribbons,
         }
+    }
+
+    pub fn with_ribbons(mut self, ribbons: Vec<String>) -> Self {
+        self.ribbons = ribbons;
+        self
     }
 }
 
@@ -936,6 +980,14 @@ impl<'de> Deserialize<'de> for DexEntry {
         // try? — even a legacy single-map format degrades names to nil instead
         // of dropping the entry (the view backfills via a line fetch).
         let names = get_opt_species_names(m, "names");
+        let mut ribbons = get_string_vec(m, "ribbons");
+        if ribbons.is_empty() {
+            ribbons.push("starter".to_string());
+            ribbons.push("graduate".to_string());
+            if get_bool(m, "isShiny") {
+                ribbons.push("shiny".to_string());
+            }
+        }
         Ok(Self {
             id,
             base_id,
@@ -946,6 +998,7 @@ impl<'de> Deserialize<'de> for DexEntry {
             is_shiny: get_bool(m, "isShiny"),
             nature: get_opt_nature(m, "nature"),
             names,
+            ribbons,
         })
     }
 }

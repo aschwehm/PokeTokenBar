@@ -5,6 +5,7 @@
   import { isEnabled, enable, disable } from "@tauri-apps/plugin-autostart";
   import { onMount } from "svelte";
   import { resolveOverdrive } from "$lib/mega";
+  import { ALL_RIBBONS, ORDERED_RIBBON_IDS, getRibbon } from "$lib/ribbons";
 
   interface ShopEntry {
     kind: string;
@@ -20,6 +21,7 @@
     rarity: string;
     isShiny: boolean;
     isRaising: boolean;
+    ribbons?: string[];
   }
 
   interface CompanionView {
@@ -46,6 +48,7 @@
     berryFeedback?: string | null;
     isMegaOverdrive?: boolean;
     megaOverdriveEnabled?: boolean;
+    ribbons?: string[];
   }
 
   interface ProviderView {
@@ -117,11 +120,22 @@
     name: string;
     isShiny: boolean;
     isRaising?: boolean;
+    ribbons?: string[];
   } | null>(null);
   let dexDetails = $state<PokedexDetails | null>(null);
   let dexDetailsLoading = $state(false);
 
-  async function openDexDetails(mon: { id: number; name: string; isShiny: boolean; isRaising?: boolean }) {
+  let showRibbonModal = $state(false);
+  let selectedRibbonMonName = $state("");
+  let selectedRibbonList = $state<string[]>([]);
+
+  function openRibbonModal(monName: string, ribbons: string[] = []) {
+    selectedRibbonMonName = monName;
+    selectedRibbonList = ribbons;
+    showRibbonModal = true;
+  }
+
+  async function openDexDetails(mon: { id: number; name: string; isShiny: boolean; isRaising?: boolean; ribbons?: string[] }) {
     selectedDexMon = mon;
     dexDetails = null;
     dexDetailsLoading = true;
@@ -229,6 +243,7 @@
 
     const emojis = specificAnim === "eating" ? ["😋", "✨", "💖"] : ["❤️", "💖", "✨", "🥰", "⭐"];
     spawnHeroHearts(emojis);
+    invoke<Snapshot>("pet_buddy").then((res) => { if (res) snap = res; }).catch(() => {});
   }
 
   function spawnHeroHearts(emojis: string[]) {
@@ -1017,6 +1032,36 @@
                       <span class="stage-label">{c.stageText ? c.stageText : `Stage ${stageInfo.stage}/${stageInfo.total}`}</span>
                       <span class="stage-pct">{growthPct}%</span>
                     </div>
+
+                    <!-- Interactive Ribbon Bar -->
+                    <div
+                      class="hero-ribbons-bar"
+                      onclick={() => openRibbonModal(effectiveName, c.ribbons ?? [])}
+                      role="button"
+                      tabindex="0"
+                      onkeydown={(e) => e.key === 'Enter' && openRibbonModal(effectiveName, c.ribbons ?? [])}
+                      title="Click to open {effectiveName}’s Ribbon Case & Achievements"
+                    >
+                      <div class="ribbons-left">
+                        <span class="ribbon-bar-icon">🏅</span>
+                        <span class="ribbon-count-text">Ribbons ({(c.ribbons ?? []).length}):</span>
+                      </div>
+                      <div class="ribbons-pills-row">
+                        {#each (c.ribbons ?? []).slice(0, 3) as rId}
+                          {@const r = getRibbon(rId)}
+                          {#if r}
+                            <span class="hero-mini-ribbon" style="--rib-color: {r.color}; --rib-glow: {r.glow};">
+                              <span class="hm-icon">{r.icon}</span>
+                              <span class="hm-text">{r.name}</span>
+                            </span>
+                          {/if}
+                        {/each}
+                        {#if (c.ribbons ?? []).length > 3}
+                          <span class="hero-mini-ribbon more-ribbons">+{(c.ribbons ?? []).length - 3}</span>
+                        {/if}
+                      </div>
+                      <span class="ribbons-arrow">➔</span>
+                    </div>
                   </div>
                 </div>
                 <div class="progress-container">
@@ -1486,6 +1531,90 @@
                 <p class="dex-flavor-text">A loyal Pokémon companion raised with your AI coding tokens.</p>
               </div>
             {/if}
+
+            <!-- Dex Pokémon Ribbons -->
+            {#if (selectedDexMon.ribbons ?? []).length > 0}
+              <div
+                class="dex-ribbons-card"
+                onclick={() => openRibbonModal(selectedDexMon?.name ?? "Pokémon", selectedDexMon?.ribbons ?? [])}
+                role="button"
+                tabindex="0"
+                onkeydown={(e) => e.key === 'Enter' && openRibbonModal(selectedDexMon?.name ?? "Pokémon", selectedDexMon?.ribbons ?? [])}
+                title="Click to view full Ribbon Case"
+              >
+                <div class="dex-ribbons-header">
+                  <span class="dex-stat-label">EARNED RIBBONS ({(selectedDexMon.ribbons ?? []).length})</span>
+                  <span class="dex-ribbons-case-btn">Open Case ➔</span>
+                </div>
+                <div class="dex-ribbons-pills">
+                  {#each selectedDexMon.ribbons ?? [] as rId}
+                    {@const r = getRibbon(rId)}
+                    {#if r}
+                      <span class="dex-ribbon-tag" style="--rib-color: {r.color}; --rib-glow: {r.glow};">
+                        <span class="drt-icon">{r.icon}</span>
+                        <span class="drt-text">{r.name}</span>
+                      </span>
+                    {/if}
+                  {/each}
+                </div>
+              </div>
+            {/if}
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    <!-- Ribbon Case & Achievements Modal -->
+    {#if showRibbonModal}
+      <div
+        class="modal-backdrop"
+        onclick={() => { showRibbonModal = false; }}
+        role="button"
+        tabindex="0"
+        onkeydown={(e) => e.key === 'Escape' && (showRibbonModal = false)}
+      >
+        <div class="modal-card ribbon-modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+          <div class="modal-header">
+            <div class="ribbon-modal-title-box">
+              <span class="ribbon-modal-icon">🏅</span>
+              <div class="ribbon-modal-title-texts">
+                <h3 class="modal-title">Ribbon Case</h3>
+                <p class="modal-subtitle">{selectedRibbonMonName}’s Honors ({selectedRibbonList.length}/{ORDERED_RIBBON_IDS.length} Unlocked)</p>
+              </div>
+            </div>
+            <button class="modal-close" onclick={() => { showRibbonModal = false; }}>✕</button>
+          </div>
+
+          <div class="ribbons-grid">
+            {#each ORDERED_RIBBON_IDS as rId}
+              {@const rib = getRibbon(rId)}
+              {#if rib}
+                {@const isUnlocked = selectedRibbonList.includes(rId)}
+                <div class="ribbon-card" class:unlocked={isUnlocked} class:locked={!isUnlocked} style="--rib-color: {rib.color}; --rib-glow: {rib.glow};">
+                  <div class="ribbon-card-icon-box">
+                    <span class="ribbon-card-icon">{rib.icon}</span>
+                    {#if isUnlocked}
+                      <span class="ribbon-check-badge" title="Unlocked!">✓</span>
+                    {/if}
+                  </div>
+                  <div class="ribbon-card-info">
+                    <div class="ribbon-card-header">
+                      <span class="ribbon-card-name">{rib.name}</span>
+                      <span class="ribbon-card-tag">{rib.badge}</span>
+                    </div>
+                    <span class="ribbon-card-title">{rib.title}</span>
+                    <p class="ribbon-card-desc">{rib.description}</p>
+                    <div class="ribbon-status-row">
+                      {#if isUnlocked}
+                        <span class="ribbon-unlocked-pill">✨ Unlocked & Honored</span>
+                      {:else}
+                        <span class="ribbon-locked-pill">🔒 Locked Milestone</span>
+                      {/if}
+                    </div>
+                  </div>
+                </div>
+              {/if}
+            {/each}
           </div>
         </div>
       </div>
@@ -3308,5 +3437,280 @@
   .wallet-card.overdrive-wallet {
     border-color: rgba(255, 234, 0, 0.4);
     box-shadow: 0 0 20px rgba(255, 234, 0, 0.18);
+  }
+
+  /* 🏅 Ribbons & Achievement Case */
+  .hero-ribbons-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    margin-top: 4px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .hero-ribbons-bar:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(252, 211, 77, 0.35);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+  .hero-ribbons-bar:active {
+    transform: scale(0.98);
+  }
+
+  .ribbons-left {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .ribbon-bar-icon {
+    font-size: 13px;
+  }
+  .ribbon-count-text {
+    font-size: 10px;
+    font-weight: 700;
+    color: #8B93A7;
+    letter-spacing: 0.04em;
+  }
+
+  .ribbons-pills-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    overflow: hidden;
+    flex: 1;
+  }
+  .hero-mini-ribbon {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--rib-color, #fff) 12%, rgba(0,0,0,0.3));
+    border: 1px solid color-mix(in srgb, var(--rib-color, #fff) 35%, transparent);
+    color: var(--rib-color, #fff);
+    font-size: 9.5px;
+    font-weight: 700;
+    white-space: nowrap;
+    box-shadow: 0 0 8px var(--rib-glow, transparent);
+  }
+  .hero-mini-ribbon.more-ribbons {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #B0B7C6;
+  }
+  .ribbons-arrow {
+    font-size: 10px;
+    color: #8B93A7;
+    margin-left: auto;
+    transition: transform 0.2s ease;
+  }
+  .hero-ribbons-bar:hover .ribbons-arrow {
+    color: #FCD34D;
+    transform: translateX(2px);
+  }
+
+  /* Dex Ribbons Section */
+  .dex-ribbons-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .dex-ribbons-card:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(252, 211, 77, 0.3);
+  }
+  .dex-ribbons-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .dex-ribbons-case-btn {
+    font-size: 10px;
+    font-weight: 700;
+    color: #FCD34D;
+  }
+  .dex-ribbons-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .dex-ribbon-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--rib-color, #fff) 12%, rgba(0,0,0,0.3));
+    border: 1px solid color-mix(in srgb, var(--rib-color, #fff) 35%, transparent);
+    color: var(--rib-color, #fff);
+    font-size: 10px;
+    font-weight: 700;
+    box-shadow: 0 0 8px var(--rib-glow, transparent);
+  }
+
+  /* Ribbon Case Modal */
+  .modal-card.ribbon-modal {
+    max-width: 520px;
+    max-height: 82vh;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+  }
+
+  .ribbon-modal-title-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .ribbon-modal-icon {
+    font-size: 26px;
+    filter: drop-shadow(0 0 10px #FCD34D);
+  }
+  .ribbon-modal-title-texts {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .ribbons-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+    padding-right: 4px;
+    margin-top: 14px;
+  }
+
+  .ribbon-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    transition: all 0.2s ease;
+  }
+
+  .ribbon-card.unlocked {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--rib-color, #fff) 12%, rgba(18,20,27,0.9)), rgba(18,20,27,0.95));
+    border: 1px solid color-mix(in srgb, var(--rib-color, #fff) 40%, transparent);
+    box-shadow: 0 0 16px var(--rib-glow, transparent);
+  }
+
+  .ribbon-card.locked {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+    opacity: 0.6;
+  }
+  .ribbon-card.locked:hover {
+    opacity: 0.85;
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .ribbon-card-icon-box {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .ribbon-card.unlocked .ribbon-card-icon-box {
+    border-color: color-mix(in srgb, var(--rib-color, #fff) 50%, transparent);
+    background: color-mix(in srgb, var(--rib-color, #fff) 15%, rgba(0,0,0,0.5));
+  }
+  .ribbon-card-icon {
+    font-size: 22px;
+  }
+  .ribbon-check-badge {
+    position: absolute;
+    bottom: -4px;
+    right: -4px;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    background: #39D98A;
+    color: #000;
+    font-size: 9.5px;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 6px #39D98A;
+  }
+
+  .ribbon-card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1;
+  }
+  .ribbon-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .ribbon-card-name {
+    font-size: 13px;
+    font-weight: 800;
+    color: #F2F3F5;
+  }
+  .ribbon-card.unlocked .ribbon-card-name {
+    color: var(--rib-color, #F2F3F5);
+  }
+  .ribbon-card-tag {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #8B93A7;
+  }
+  .ribbon-card.unlocked .ribbon-card-tag {
+    background: color-mix(in srgb, var(--rib-color, #fff) 20%, transparent);
+    color: var(--rib-color, #F2F3F5);
+  }
+
+  .ribbon-card-title {
+    font-size: 10.5px;
+    font-weight: 600;
+    font-style: italic;
+    color: #B0B7C6;
+  }
+  .ribbon-card-desc {
+    font-size: 11px;
+    color: #8B93A7;
+    margin: 2px 0 0 0;
+    line-height: 1.4;
+  }
+
+  .ribbon-status-row {
+    margin-top: 4px;
+  }
+  .ribbon-unlocked-pill {
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #39D98A;
+  }
+  .ribbon-locked-pill {
+    font-size: 9.5px;
+    font-weight: 600;
+    color: #64748B;
   }
 </style>
