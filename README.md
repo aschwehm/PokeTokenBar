@@ -6,20 +6,23 @@ This project is a from-scratch cross-platform port of the original macOS menu-ba
 
 It monitors the AI coding tokens you burn across 10 tools (Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI, Copilot CLI, Kiro CLI) and turns them into a growing, evolving Pokémon buddy right on your desktop.
 
-> **Status: v0.3.5 — Mega Overdrive, Desktop Pet 2.0 & Ribbon Achievement System (Linux & Windows).**
+> **Status: v0.3.6 — Trainer Passport, GitHub Activity Heatmap & PokéJournal (Linux & Windows).**
 > - **10 Supported AI Providers**: Claude Code, Codex, Gemini CLI / AGY, Grok CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Copilot CLI, Kiro CLI.
+> - **🪪 Holographic Trainer Passport**: Custom Trainer ID (`#TR-XXXX`), customizable nickname, Pokédex buddy avatar selector, and career rank titles (`Novice` → `AI Grandmaster Champion`).
+> - **🟩 GitHub-Style Token Coding Heatmap**: 26-week retroactive pixel contribution grid with 5 token intensity levels, current/best streak trackers, active day tallies, and daily average volume.
+> - **📜 Trainer PokéJournal & Milestone Diary**: Auto-generated chronological timeline logging companion hatches, evolutions, graduations, berry feeding, and ribbon unlocks.
 > - **⚡ Mega Evolution & Gigantamax Overdrive**: Temporary Mega / G-Max transformation during Fast/Blazing burn sprints with 2× Coin Rush shop multipliers and Prismatic HUD.
 > - **🏅 Pokémon Ribbon & Achievement System**: 11 unique unlockable trainer ribbons & honors with an interactive Ribbon Case modal and Pokédex integration.
 > - **🕹️ Desktop Pet 2.0**: Interactive petting animations (Happy Hop, Playful Wiggle, Floating Hearts), 15-minute Sleep & Wake cycle with floating `Zzz` bubbles, and Sitrus Berry golden sparkle aura.
 > - **🎒 PokéShop & Bag Item Lore**: Comprehensive descriptions and live effect tiles for Rare Candies, Nature Mints, Oran Berries, Sitrus Berries, and Shiny Charms.
 > - **Interactive Pokédex Detail Modal**: Click any discovered Pokémon to read its official game Pokédex lore, classification, height, weight, category, and earned ribbons.
-> - **336 passing unit tests**. See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md).
+> - **337 passing unit tests**. See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md).
 
 > [!IMPORTANT]
 > **Provider Testing & Verification Status**:
 > Live end-to-end testing has currently been verified with **Antigravity / `agy` (the new Gemini CLI)** and **Claude Code** (as these are the tools available in our testing environment).
 >
-> Parsers for all other 8 providers (Codex, Grok CLI, OpenCode, Hermes Agent, Cursor, Copilot CLI, Kiro CLI, legacy Gemini) are implemented and validated against the original Swift reference test suite fixtures (336+ unit tests), but **live testing from the community is actively welcome**! If you encounter any path or format differences, please open an issue on GitHub.
+> Parsers for all other 8 providers (Codex, Grok CLI, OpenCode, Hermes Agent, Cursor, Copilot CLI, Kiro CLI, legacy Gemini) are implemented and validated against the original Swift reference test suite fixtures (337+ unit tests), but **live testing from the community is actively welcome**! If you encounter any path or format differences, please open an issue on GitHub.
 
 ---
 

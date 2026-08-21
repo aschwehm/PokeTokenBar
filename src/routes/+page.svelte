@@ -24,6 +24,17 @@
     ribbons?: string[];
   }
 
+  interface JournalEntry {
+    id: string;
+    timestamp: string;
+    kind: string;
+    title: string;
+    description: string;
+    icon: string;
+    speciesId?: number | null;
+    isShiny?: boolean;
+  }
+
   interface CompanionView {
     displayState: string;
     displayName: string;
@@ -49,6 +60,15 @@
     isMegaOverdrive?: boolean;
     megaOverdriveEnabled?: boolean;
     ribbons?: string[];
+    trainerName?: string;
+    trainerId?: string;
+    trainerTitle?: string;
+    avatarSpeciesId?: number | null;
+    journal?: JournalEntry[];
+    dailyHistory?: Record<string, number>;
+    state?: {
+      usedSinceInstall?: number;
+    };
   }
 
   interface ProviderView {
@@ -99,7 +119,7 @@
     usage: UsageView;
   }
 
-  type Tab = "buddy" | "usage" | "shop" | "pokedex";
+  type Tab = "buddy" | "usage" | "shop" | "pokedex" | "trainer";
   type Theme = "midnight" | "oled" | "cyberpunk" | "retro";
 
   let snap = $state<Snapshot | null>(null);
@@ -114,6 +134,167 @@
   let autostartActive = $state(false);
   let celebrationDismissed = $state(false);
   let shakeItemId = $state<string | null>(null);
+
+  let isEditingTrainerName = $state(false);
+  let trainerNameInput = $state("");
+  let showAvatarPickerModal = $state(false);
+  let hoveredHeatmapCell = $state<{
+    dateStr: string;
+    tokens: number;
+    formattedDate: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  function startEditingTrainerName() {
+    trainerNameInput = snap?.companion.trainerName ?? "Trainer";
+    isEditingTrainerName = true;
+  }
+
+  async function saveTrainerName() {
+    if (!trainerNameInput.trim()) {
+      isEditingTrainerName = false;
+      return;
+    }
+    try {
+      const res = await invoke<Snapshot>("set_trainer_name", { name: trainerNameInput.trim() });
+      if (res) snap = res;
+    } catch {}
+    isEditingTrainerName = false;
+  }
+
+  async function chooseAvatar(speciesId: number | null) {
+    try {
+      const res = await invoke<Snapshot>("set_trainer_avatar", { speciesId });
+      if (res) snap = res;
+    } catch {}
+    showAvatarPickerModal = false;
+  }
+
+  interface DayCell {
+    dateStr: string;
+    tokens: number;
+    level: number;
+    formattedDate: string;
+    dayOfWeek: number;
+  }
+
+  interface WeekCol {
+    monthLabel: string | null;
+    days: DayCell[];
+  }
+
+  const heatmapInfo = $derived.by(() => {
+    const history = snap?.companion.dailyHistory ?? {};
+    const totalBurned = snap?.companion.state?.usedSinceInstall ?? 0;
+
+    const today = new Date();
+    const todayStr = today.toISOString().split("T")[0];
+
+    const dates = Object.keys(history).sort();
+    let currentStreak = 0;
+    let maxStreak = 0;
+    let activeDays = 0;
+
+    let tempStreak = 0;
+    let checkDate = new Date(today);
+
+    const todayTokens = history[todayStr] ?? 0;
+    if (todayTokens === 0) {
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+
+    for (let i = 0; i < 365; i++) {
+      const dStr = checkDate.toISOString().split("T")[0];
+      if ((history[dStr] ?? 0) > 0) {
+        currentStreak++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+
+    let prevTime = 0;
+    for (const d of dates) {
+      if ((history[d] ?? 0) > 0) {
+        activeDays++;
+        const currTime = new Date(d).getTime();
+        if (prevTime > 0 && currTime - prevTime === 86400000) {
+          tempStreak++;
+        } else {
+          tempStreak = 1;
+        }
+        if (tempStreak > maxStreak) maxStreak = tempStreak;
+        prevTime = currTime;
+      }
+    }
+    if (currentStreak > maxStreak) maxStreak = currentStreak;
+
+    const weeks: WeekCol[] = [];
+    const endDate = new Date(today);
+    const dayOfWeek = (endDate.getDay() + 6) % 7;
+    const daysUntilSunday = 6 - dayOfWeek;
+    const gridEnd = new Date(endDate);
+    gridEnd.setDate(gridEnd.getDate() + daysUntilSunday);
+
+    const totalDays = 26 * 7;
+    const gridStart = new Date(gridEnd);
+    gridStart.setDate(gridStart.getDate() - totalDays + 1);
+
+    let lastMonth = -1;
+    const currentDayIter = new Date(gridStart);
+
+    for (let w = 0; w < 26; w++) {
+      const weekDays: DayCell[] = [];
+      let monthForWeek: string | null = null;
+
+      for (let d = 0; d < 7; d++) {
+        const dStr = currentDayIter.toISOString().split("T")[0];
+        const dayTokens = history[dStr] ?? 0;
+
+        let lvl = 0;
+        if (dayTokens > 10_000_000) lvl = 4;
+        else if (dayTokens >= 2_500_000) lvl = 3;
+        else if (dayTokens >= 500_000) lvl = 2;
+        else if (dayTokens > 0) lvl = 1;
+
+        const m = currentDayIter.getMonth();
+        if (m !== lastMonth && d === 0) {
+          lastMonth = m;
+          monthForWeek = currentDayIter.toLocaleDateString("en-US", { month: "short" });
+        }
+
+        const dateOptions: Intl.DateTimeFormatOptions = {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        };
+        weekDays.push({
+          dateStr: dStr,
+          tokens: dayTokens,
+          level: lvl,
+          formattedDate: currentDayIter.toLocaleDateString("en-US", dateOptions),
+          dayOfWeek: d,
+        });
+
+        currentDayIter.setDate(currentDayIter.getDate() + 1);
+      }
+
+      weeks.push({
+        monthLabel: monthForWeek,
+        days: weekDays,
+      });
+    }
+
+    return {
+      weeks,
+      currentStreak,
+      maxStreak,
+      activeDays,
+      dailyAverage: activeDays > 0 ? Math.round(totalBurned / activeDays) : 0,
+    };
+  });
 
   let selectedDexMon = $state<{
     id: number;
@@ -635,6 +816,7 @@
     { id: "usage", label: "Usage" },
     { id: "shop", label: "Shop & Bag" },
     { id: "pokedex", label: "Pokédex" },
+    { id: "trainer", label: "Passport" },
   ];
 </script>
 
@@ -758,10 +940,20 @@
               <line x1="7" y1="14.5" x2="17" y2="14.5"></line>
               <line x1="7" y1="17.2" x2="13" y2="17.2"></line>
             </svg>
+          {:else if tab.id === "trainer"}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="3"></rect>
+              <circle cx="9" cy="10" r="2.5"></circle>
+              <path d="M15 8h4"></path>
+              <path d="M15 12h4"></path>
+              <path d="M5 18c0-2 2-3.5 4-3.5s4 1.5 4 3.5"></path>
+            </svg>
           {/if}
           <span>{tab.label}</span>
           {#if tab.id === "pokedex" && snap && snap.companion.dex.length > 0}
             <span class="tab-badge">{snap.companion.dex.length}</span>
+          {:else if tab.id === "trainer" && snap && (snap.companion.journal ?? []).length > 0}
+            <span class="tab-badge">{(snap.companion.journal ?? []).length}</span>
           {/if}
         </button>
       {/each}
@@ -1444,6 +1636,263 @@
           </div>
         {/if}
 
+        {#if currentTab === "trainer"}
+          {@const avatarId = c.avatarSpeciesId ?? c.currentSpeciesId ?? (c.dex[0]?.id ?? 25)}
+          {@const trainerTitle = c.trainerTitle ?? "Novice Pokémon Trainer"}
+          {@const trainerId = c.trainerId ?? "TR-0001"}
+          {@const trainerName = c.trainerName ?? "Trainer"}
+          <div class="tab-pane trainer-pane">
+
+            <!-- 🪪 Holographic Trainer Passport Card -->
+            <div class="trainer-passport-card">
+              <div class="passport-foil-glow"></div>
+
+              <div class="passport-header">
+                <div class="passport-title-badge">
+                  <span class="passport-icon">🪪</span>
+                  <span class="passport-title-text">POKÉMON TRAINER PASSPORT</span>
+                </div>
+                <span class="passport-region-badge">KANTO REGION</span>
+              </div>
+
+              <div class="passport-body">
+                <!-- Avatar column -->
+                <div class="passport-avatar-box">
+                  <div
+                    class="avatar-frame"
+                    onclick={() => { showAvatarPickerModal = true; }}
+                    role="button"
+                    tabindex="0"
+                    onkeydown={(e) => e.key === 'Enter' && (showAvatarPickerModal = true)}
+                    title="Click to Change Trainer Avatar"
+                  >
+                    <img
+                      class="avatar-sprite-img"
+                      src={spriteUrl(avatarId, c.isShiny, true)}
+                      alt="Trainer Avatar"
+                      onerror={(e) => fallbackStaticSprite(e, avatarId, false)}
+                    />
+                    <div class="avatar-edit-overlay">
+                      <span>Change ✎</span>
+                    </div>
+                  </div>
+                  <span class="avatar-helper-text">Avatar</span>
+                </div>
+
+                <!-- Info column -->
+                <div class="passport-info-col">
+                  <div class="passport-name-row">
+                    {#if isEditingTrainerName}
+                      <div class="name-edit-box">
+                        <input
+                          type="text"
+                          class="trainer-name-input"
+                          bind:value={trainerNameInput}
+                          maxlength="24"
+                          placeholder="Enter trainer nickname…"
+                          onkeydown={(e) => {
+                            if (e.key === "Enter") saveTrainerName();
+                            if (e.key === "Escape") isEditingTrainerName = false;
+                          }}
+                        />
+                        <button class="save-name-btn" onclick={saveTrainerName}>✓</button>
+                        <button class="cancel-name-btn" onclick={() => isEditingTrainerName = false}>✕</button>
+                      </div>
+                    {:else}
+                      <div
+                        class="trainer-name-display"
+                        onclick={startEditingTrainerName}
+                        role="button"
+                        tabindex="0"
+                        onkeydown={(e) => e.key === 'Enter' && startEditingTrainerName()}
+                        title="Click to Edit Nickname"
+                      >
+                        <span class="trainer-nickname">{trainerName}</span>
+                        <span class="edit-pencil-icon">✎</span>
+                      </div>
+                    {/if}
+                    <span class="trainer-id-pill">{trainerId}</span>
+                  </div>
+
+                  <div class="passport-rank-badge">
+                    <span class="rank-star-icon">🎖️</span>
+                    <span class="rank-title-text">{trainerTitle}</span>
+                  </div>
+
+                  <div class="passport-stats-mini-row">
+                    <div class="mini-stat">
+                      <span class="stat-lbl">LIFETIME</span>
+                      <span class="stat-val">{tokens(c.state?.usedSinceInstall ?? 0)}</span>
+                    </div>
+                    <div class="mini-stat">
+                      <span class="stat-lbl">HATCHED</span>
+                      <span class="stat-val">{c.dex.length} Mon</span>
+                    </div>
+                    <div class="mini-stat">
+                      <span class="stat-lbl">RIBBONS</span>
+                      <span class="stat-val">{(c.ribbons ?? []).length} / 11</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 🟩 GitHub-Style Coding Activity Heatmap -->
+            <div class="heatmap-section-card">
+              <div class="heatmap-header">
+                <div class="heatmap-title-box">
+                  <span class="heatmap-title-icon">🟩</span>
+                  <div>
+                    <h3 class="heatmap-heading">Coding Activity Heatmap</h3>
+                    <p class="heatmap-subheading">Daily AI token burn history across all providers (past 26 weeks)</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Streak & Productivity Metrics Grid -->
+              <div class="streak-metrics-grid">
+                <div class="streak-card">
+                  <span class="streak-icon">🔥</span>
+                  <div class="streak-info">
+                    <span class="streak-num">{heatmapInfo.currentStreak} Days</span>
+                    <span class="streak-label">CURRENT STREAK</span>
+                  </div>
+                </div>
+                <div class="streak-card">
+                  <span class="streak-icon">🏆</span>
+                  <div class="streak-info">
+                    <span class="streak-num">{heatmapInfo.maxStreak} Days</span>
+                    <span class="streak-label">BEST STREAK</span>
+                  </div>
+                </div>
+                <div class="streak-card">
+                  <span class="streak-icon">📅</span>
+                  <div class="streak-info">
+                    <span class="streak-num">{heatmapInfo.activeDays} Days</span>
+                    <span class="streak-label">ACTIVE DAYS</span>
+                  </div>
+                </div>
+                <div class="streak-card">
+                  <span class="streak-icon">⚡</span>
+                  <div class="streak-info">
+                    <span class="streak-num">{tokens(heatmapInfo.dailyAverage)}</span>
+                    <span class="streak-label">DAILY AVG</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Pixel Grid Container -->
+              <div class="heatmap-grid-scroll">
+                <div class="heatmap-grid-inner">
+                  <!-- Month labels row -->
+                  <div class="heatmap-months-row">
+                    <div class="month-spacer"></div>
+                    {#each heatmapInfo.weeks as w}
+                      <div class="month-col-header">
+                        {#if w.monthLabel}
+                          <span class="month-text">{w.monthLabel}</span>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+
+                  <!-- Days Grid Row (Days on left + Week columns) -->
+                  <div class="heatmap-body-row">
+                    <div class="heatmap-days-labels">
+                      <span>Mon</span>
+                      <span>Wed</span>
+                      <span>Fri</span>
+                    </div>
+
+                    <div class="heatmap-weeks-cols">
+                      {#each heatmapInfo.weeks as w}
+                        <div class="week-col">
+                          {#each w.days as d}
+                            <div
+                              class="day-cell level-{d.level}"
+                              title="{d.formattedDate}: {tokens(d.tokens)} tokens"
+                              onmouseenter={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                hoveredHeatmapCell = {
+                                  dateStr: d.dateStr,
+                                  tokens: d.tokens,
+                                  formattedDate: d.formattedDate,
+                                  x: rect.left + rect.width / 2,
+                                  y: rect.top,
+                                };
+                              }}
+                              onmouseleave={() => { hoveredHeatmapCell = null; }}
+                            ></div>
+                          {/each}
+                        </div>
+                      {/each}
+                    </div>
+                  </div>
+
+                  <!-- Legend footer -->
+                  <div class="heatmap-footer-legend">
+                    <span class="legend-text">Less</span>
+                    <div class="legend-cell level-0"></div>
+                    <div class="legend-cell level-1"></div>
+                    <div class="legend-cell level-2"></div>
+                    <div class="legend-cell level-3"></div>
+                    <div class="legend-cell level-4"></div>
+                    <span class="legend-text">More</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 📜 Trainer PokéJournal & Milestone Feed -->
+            <div class="journal-section-card">
+              <div class="journal-header">
+                <div class="journal-title-box">
+                  <span class="journal-icon">📜</span>
+                  <div>
+                    <h3 class="journal-heading">Trainer’s PokéJournal</h3>
+                    <p class="journal-subheading">Chronological record of evolutionary feats, achievements & milestones</p>
+                  </div>
+                </div>
+                <span class="journal-counter">{(c.journal ?? []).length} Memories</span>
+              </div>
+
+              <div class="journal-feed">
+                {#if (c.journal ?? []).length === 0}
+                  <div class="journal-empty">
+                    <span class="empty-icon">📖</span>
+                    <p class="empty-title">Your journal is ready for memories!</p>
+                    <p class="empty-sub">Hatch Pokémon, sprint in Overdrive, feed berries, and earn Ribbons to fill your diary.</p>
+                  </div>
+                {:else}
+                  {#each c.journal ?? [] as item (item.id)}
+                    <div class="journal-card kind-{item.kind}">
+                      <div class="journal-card-left">
+                        <div class="journal-icon-bubble">{item.icon}</div>
+                        {#if item.speciesId}
+                          <img
+                            class="journal-mon-thumb"
+                            src={spriteUrl(item.speciesId, Boolean(item.isShiny), true)}
+                            alt="Pokémon"
+                            onerror={(e) => fallbackStaticSprite(e, item.speciesId ?? 1, Boolean(item.isShiny))}
+                          />
+                        {/if}
+                      </div>
+                      <div class="journal-card-body">
+                        <div class="journal-card-top">
+                          <span class="journal-card-title">{item.title}</span>
+                          <span class="journal-card-time">{new Date(item.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+                        </div>
+                        <p class="journal-card-desc">{item.description}</p>
+                      </div>
+                    </div>
+                  {/each}
+                {/if}
+              </div>
+            </div>
+
+          </div>
+        {/if}
+
       {:else if !loading}
         <div class="empty-state-loading">
           <div class="loading-spinner"></div>
@@ -1614,6 +2063,51 @@
                   </div>
                 </div>
               {/if}
+            {/each}
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    <!-- Avatar Picker Modal -->
+    {#if showAvatarPickerModal}
+      <div
+        class="modal-backdrop"
+        onclick={() => { showAvatarPickerModal = false; }}
+        role="button"
+        tabindex="0"
+        onkeydown={(e) => e.key === 'Escape' && (showAvatarPickerModal = false)}
+      >
+        <div class="modal-card avatar-modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+          <div class="modal-header">
+            <div class="ribbon-modal-title-box">
+              <span class="ribbon-modal-icon">🪪</span>
+              <div class="ribbon-modal-title-texts">
+                <h3 class="modal-title">Choose Trainer Avatar</h3>
+                <p class="modal-subtitle">Select any Pokémon from your registered Pokédex</p>
+              </div>
+            </div>
+            <button class="modal-close" onclick={() => { showAvatarPickerModal = false; }}>✕</button>
+          </div>
+
+          <div class="avatar-grid-select">
+            <button class="avatar-select-card default-active-opt" onclick={() => chooseAvatar(null)} type="button">
+              <span class="avatar-opt-title">🌟 Follow Active Partner</span>
+              <span class="avatar-opt-sub">Automatically matches your currently raised companion</span>
+            </button>
+            {#each snap?.companion.dex ?? [] as d}
+              <button class="avatar-select-card" onclick={() => chooseAvatar(d.id)} type="button">
+                <img
+                  class="avatar-opt-sprite"
+                  src={spriteUrl(d.id, d.isShiny, true)}
+                  alt={d.name}
+                  onerror={(e) => fallbackStaticSprite(e, d.id, d.isShiny)}
+                />
+                <span class="avatar-opt-name">
+                  {d.name}
+                  {#if d.isShiny}<span class="shiny-star">✨</span>{/if}
+                </span>
+              </button>
             {/each}
           </div>
         </div>
@@ -3712,5 +4206,625 @@
     font-size: 9.5px;
     font-weight: 600;
     color: #64748B;
+  }
+
+  /* 🪪 Trainer Passport & Activity Tab */
+  .trainer-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* Holographic Trainer Passport Card */
+  .trainer-passport-card {
+    position: relative;
+    overflow: hidden;
+    padding: 16px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(26, 32, 48, 0.95), rgba(15, 18, 26, 0.98));
+    border: 1.5px solid rgba(255, 215, 0, 0.35);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 20px rgba(255, 215, 0, 0.12);
+  }
+
+  .passport-foil-glow {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(125deg, rgba(255,255,255,0.06) 0%, rgba(255,215,0,0.12) 35%, rgba(0,229,255,0.12) 70%, rgba(255,0,122,0.06) 100%);
+    pointer-events: none;
+    opacity: 0.8;
+  }
+
+  .passport-header {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    margin-bottom: 14px;
+  }
+  .passport-title-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .passport-icon {
+    font-size: 15px;
+  }
+  .passport-title-text {
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    color: #FCD34D;
+    text-shadow: 0 0 8px rgba(252, 211, 77, 0.4);
+  }
+  .passport-region-badge {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: #94A3B8;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .passport-body {
+    position: relative;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+
+  /* Avatar Frame */
+  .passport-avatar-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .avatar-frame {
+    position: relative;
+    width: 72px;
+    height: 72px;
+    border-radius: 16px;
+    background: rgba(0, 0, 0, 0.45);
+    border: 2px solid rgba(255, 215, 0, 0.4);
+    box-shadow: 0 0 16px rgba(255, 215, 0, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .avatar-frame:hover {
+    transform: scale(1.04);
+    border-color: #FCD34D;
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+  }
+  .avatar-sprite-img {
+    width: 60px;
+    height: 60px;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
+  }
+  .avatar-edit-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    color: #FCD34D;
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  .avatar-frame:hover .avatar-edit-overlay {
+    opacity: 1;
+  }
+  .avatar-helper-text {
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #8B93A7;
+  }
+
+  /* Passport info col */
+  .passport-info-col {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .passport-name-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .trainer-name-display {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+  .trainer-name-display:hover .edit-pencil-icon {
+    color: #FCD34D;
+  }
+  .trainer-nickname {
+    font-size: 16px;
+    font-weight: 900;
+    color: #F8FAFC;
+  }
+  .edit-pencil-icon {
+    font-size: 12px;
+    color: #64748B;
+    transition: color 0.2s ease;
+  }
+
+  .name-edit-box {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+  }
+  .trainer-name-input {
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 215, 0, 0.5);
+    color: #F8FAFC;
+    padding: 3px 8px;
+    font-size: 13px;
+    font-weight: 700;
+    border-radius: 6px;
+    width: 130px;
+    outline: none;
+  }
+  .save-name-btn, .cancel-name-btn {
+    padding: 3px 6px;
+    font-size: 11px;
+    font-weight: 800;
+    border-radius: 6px;
+    cursor: pointer;
+    border: none;
+  }
+  .save-name-btn { background: #39D98A; color: #000; }
+  .cancel-name-btn { background: rgba(255,255,255,0.1); color: #fff; }
+
+  .trainer-id-pill {
+    font-size: 10px;
+    font-weight: 800;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94A3B8;
+  }
+
+  .passport-rank-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 8px;
+    background: rgba(252, 211, 77, 0.1);
+    border: 1px solid rgba(252, 211, 77, 0.3);
+    width: fit-content;
+  }
+  .rank-star-icon { font-size: 12px; }
+  .rank-title-text {
+    font-size: 10.5px;
+    font-weight: 800;
+    color: #FCD34D;
+    letter-spacing: 0.02em;
+  }
+
+  .passport-stats-mini-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .mini-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    flex: 1;
+  }
+  .mini-stat .stat-lbl {
+    font-size: 8.5px;
+    font-weight: 700;
+    color: #8B93A7;
+    letter-spacing: 0.05em;
+  }
+  .mini-stat .stat-val {
+    font-size: 11px;
+    font-weight: 800;
+    color: #E2E8F0;
+  }
+
+  /* 🟩 GitHub-Style Heatmap Section */
+  .heatmap-section-card {
+    padding: 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .heatmap-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .heatmap-title-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .heatmap-title-icon { font-size: 16px; }
+  .heatmap-heading {
+    font-size: 13px;
+    font-weight: 800;
+    color: #F8FAFC;
+    margin: 0;
+  }
+  .heatmap-subheading {
+    font-size: 10px;
+    color: #8B93A7;
+    margin: 2px 0 0 0;
+  }
+
+  /* Streak Metrics Grid */
+  .streak-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+  .streak-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .streak-icon { font-size: 15px; }
+  .streak-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .streak-num {
+    font-size: 11.5px;
+    font-weight: 800;
+    color: #F1F5F9;
+  }
+  .streak-label {
+    font-size: 8px;
+    font-weight: 700;
+    color: #8B93A7;
+    letter-spacing: 0.05em;
+  }
+
+  /* Pixel Grid Container */
+  .heatmap-grid-scroll {
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .heatmap-grid-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 480px;
+  }
+
+  .heatmap-months-row {
+    display: flex;
+    gap: 3px;
+    height: 12px;
+  }
+  .month-spacer {
+    width: 24px;
+    flex-shrink: 0;
+  }
+  .month-col-header {
+    width: 12px;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .month-text {
+    position: absolute;
+    left: 0;
+    top: 0;
+    font-size: 9px;
+    font-weight: 700;
+    color: #8B93A7;
+    white-space: nowrap;
+  }
+
+  .heatmap-body-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .heatmap-days-labels {
+    width: 18px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 88px;
+    font-size: 8px;
+    font-weight: 700;
+    color: #64748B;
+    padding: 1px 0;
+  }
+
+  .heatmap-weeks-cols {
+    display: flex;
+    gap: 3px;
+  }
+  .week-col {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .day-cell {
+    width: 11px;
+    height: 11px;
+    border-radius: 2.5px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    cursor: pointer;
+  }
+  .day-cell:hover {
+    transform: scale(1.3);
+    z-index: 5;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+  }
+
+  .day-cell.level-0 {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+  }
+  .day-cell.level-1 {
+    background: #0E4429;
+    border: 1px solid #166534;
+  }
+  .day-cell.level-2 {
+    background: #006D32;
+    border: 1px solid #15803D;
+  }
+  .day-cell.level-3 {
+    background: #26A641;
+    border: 1px solid #22C55E;
+  }
+  .day-cell.level-4 {
+    background: #39D353;
+    border: 1px solid #4ADE80;
+    box-shadow: 0 0 4px #39D353;
+  }
+
+  .heatmap-footer-legend {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .legend-text {
+    font-size: 9px;
+    font-weight: 600;
+    color: #8B93A7;
+  }
+  .legend-cell {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+  }
+
+  /* 📜 Trainer PokéJournal Feed */
+  .journal-section-card {
+    padding: 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .journal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .journal-title-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .journal-icon { font-size: 16px; }
+  .journal-heading {
+    font-size: 13px;
+    font-weight: 800;
+    color: #F8FAFC;
+    margin: 0;
+  }
+  .journal-subheading {
+    font-size: 10px;
+    color: #8B93A7;
+    margin: 2px 0 0 0;
+  }
+  .journal-counter {
+    font-size: 10px;
+    font-weight: 700;
+    color: #FCD34D;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(252, 211, 77, 0.1);
+    border: 1px solid rgba(252, 211, 77, 0.25);
+  }
+
+  .journal-feed {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+
+  .journal-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 28px 16px;
+    text-align: center;
+  }
+  .journal-empty .empty-icon { font-size: 28px; margin-bottom: 6px; }
+  .journal-empty .empty-title { font-size: 12px; font-weight: 800; color: #E2E8F0; margin: 0; }
+  .journal-empty .empty-sub { font-size: 10.5px; color: #8B93A7; margin: 4px 0 0 0; max-width: 280px; }
+
+  .journal-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: all 0.2s ease;
+  }
+  .journal-card:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.1);
+    transform: translateY(-1px);
+  }
+
+  .journal-card-left {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .journal-icon-bubble {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+  }
+  .journal-mon-thumb {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+  }
+
+  .journal-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+  .journal-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .journal-card-title {
+    font-size: 12px;
+    font-weight: 800;
+    color: #F1F5F9;
+  }
+  .journal-card-time {
+    font-size: 9.5px;
+    font-weight: 600;
+    color: #8B93A7;
+    white-space: nowrap;
+  }
+  .journal-card-desc {
+    font-size: 10.5px;
+    color: #94A3B8;
+    margin: 0;
+    line-height: 1.35;
+  }
+
+  /* Avatar Picker Modal */
+  .modal-card.avatar-modal {
+    max-width: 440px;
+    max-height: 75vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .avatar-grid-select {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    overflow-y: auto;
+    margin-top: 14px;
+    padding-right: 4px;
+  }
+  .avatar-select-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 10px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .avatar-select-card:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: #FCD34D;
+    transform: translateY(-2px);
+  }
+  .avatar-select-card.default-active-opt {
+    grid-column: span 3;
+    padding: 10px 14px;
+    background: rgba(252, 211, 77, 0.08);
+    border-color: rgba(252, 211, 77, 0.3);
+    align-items: flex-start;
+  }
+  .avatar-opt-title {
+    font-size: 12px;
+    font-weight: 800;
+    color: #FCD34D;
+  }
+  .avatar-opt-sub {
+    font-size: 10px;
+    color: #94A3B8;
+  }
+  .avatar-opt-sprite {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+  }
+  .avatar-opt-name {
+    font-size: 11px;
+    font-weight: 800;
+    color: #F1F5F9;
+    text-align: center;
   }
 </style>

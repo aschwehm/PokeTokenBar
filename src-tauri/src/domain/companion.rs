@@ -1005,6 +1005,24 @@ impl<'de> Deserialize<'de> for DexEntry {
 
 /// Persistent state (Application Support JSON). Switching Pokémon — the old
 /// custom character state is discarded (fresh start).
+/// One PokéJournal milestone entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JournalEntry {
+    pub id: String,
+    pub timestamp: String,
+    pub kind: String,
+    pub title: String,
+    pub description: String,
+    pub icon: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub species_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_shiny: bool,
+}
+
+/// Persistent state (Application Support JSON). Switching Pokémon — the old
+/// custom character state is discarded (fresh start).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanionState {
@@ -1057,10 +1075,22 @@ pub struct CompanionState {
     // First-run candy seeding done — blocks retroactive grants to windows that
     // were already at 100% right after an update.
     pub candy_feature_seeded: bool,
+    // Trainer Passport & Activity
+    pub trainer_name: String,
+    pub trainer_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_species_id: Option<i64>,
+    pub journal: Vec<JournalEntry>,
+    pub daily_history: HashMap<String, i64>,
 }
 
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+fn generate_default_trainer_id() -> String {
+    let num = (Utc::now().timestamp_millis() % 9000).abs() + 1000;
+    format!("TR-{:04}", num)
 }
 
 impl Default for CompanionState {
@@ -1081,6 +1111,11 @@ impl Default for CompanionState {
             inventory: HashMap::new(),
             candy_grant_tier: HashMap::new(),
             candy_feature_seeded: false,
+            trainer_name: "Trainer".to_string(),
+            trainer_id: generate_default_trainer_id(),
+            avatar_species_id: None,
+            journal: Vec::new(),
+            daily_history: HashMap::new(),
         }
     }
 }
@@ -1125,6 +1160,19 @@ impl<'de> Deserialize<'de> for CompanionState {
                 .collect(),
             _ => Vec::new(),
         };
+        let journal = match m.get("journal") {
+            Some(Value::Array(arr)) => arr
+                .iter()
+                .filter_map(|item| JournalEntry::deserialize(item).ok())
+                .collect(),
+            _ => Vec::new(),
+        };
+        let trainer_name =
+            get_opt_string(m, "trainerName").unwrap_or_else(|| "Trainer".to_string());
+        let trainer_id = get_opt_string(m, "trainerId").unwrap_or_else(generate_default_trainer_id);
+        let avatar_species_id = get_opt_i64(m, "avatarSpeciesId");
+        let daily_history = get_string_i64_map(m, "dailyHistory");
+
         Ok(Self {
             install_baseline_set: get_bool(m, "installBaselineSet"),
             used_since_install: get_i64(m, "usedSinceInstall"),
@@ -1141,6 +1189,11 @@ impl<'de> Deserialize<'de> for CompanionState {
             inventory: get_string_i64_map(m, "inventory"),
             candy_grant_tier: get_string_i64_map(m, "candyGrantTier"),
             candy_feature_seeded: get_bool(m, "candyFeatureSeeded"),
+            trainer_name,
+            trainer_id,
+            avatar_species_id,
+            journal,
+            daily_history,
         })
     }
 }

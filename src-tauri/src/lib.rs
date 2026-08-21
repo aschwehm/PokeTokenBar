@@ -57,6 +57,8 @@ pub fn run() {
             integration::app::toggle_pet_window,
             integration::app::set_mega_overdrive_enabled,
             integration::app::pet_buddy,
+            integration::app::set_trainer_name,
+            integration::app::set_trainer_avatar,
             integration::app::minimize_window,
             integration::app::hide_window,
             integration::app::get_sprite,

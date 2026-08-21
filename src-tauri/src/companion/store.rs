@@ -17,9 +17,9 @@ use uuid::Uuid;
 
 use crate::domain::companion::{
     AppLanguage, CandyGrant, CandyWindow, CompanionState, CompanionStateKind, DexEntry, EvoLine,
-    EvoLineItem, EvoLineItemContent, EvoLineItemState, EvoNode, FreshEgg, ItemKind, MonState,
-    OranBerry, PokemonAssets, PokemonBalance, PokemonNature, PokemonOdds, RareCandy, Rarity,
-    ShinyCharm, ShopEntry, SitrusBerry, WindowClass,
+    EvoLineItem, EvoLineItemContent, EvoLineItemState, EvoNode, FreshEgg, ItemKind, JournalEntry,
+    MonState, OranBerry, PokemonAssets, PokemonBalance, PokemonNature, PokemonOdds, RareCandy,
+    Rarity, ShinyCharm, ShopEntry, SitrusBerry, WindowClass,
 };
 use crate::domain::save::{SaveEnvelope, SaveSummary, SaveTransfer, SaveTransferError};
 use crate::platform::{self, app_env};
@@ -720,9 +720,24 @@ impl CompanionStore {
         self.candy_feedback_seq += 1;
         self.berry_feedback_kind = Some("oranBerry".to_string());
         self.berry_feedback_seq += 1;
+        let mon_id = self.state.active.as_ref().map(|a| a.current_id());
+        let is_shiny = self
+            .state
+            .active
+            .as_ref()
+            .map(|a| a.is_shiny)
+            .unwrap_or(false);
         if let Some(active) = self.state.active.as_mut() {
             active.add_ribbon("gourmet");
         }
+        self.add_journal_entry(
+            "berry",
+            "Fed Oran Berry 🍊",
+            "Boosted XP (+15M) and delighted your companion!",
+            "🍊",
+            mon_id,
+            is_shiny,
+        );
         self.apply_usage(OranBerry::XP);
         if self.state.active.is_none() {
             return CandyUseResult::Graduated;
@@ -760,9 +775,24 @@ impl CompanionStore {
         self.berry_feedback_kind = Some("sitrusBerry".to_string());
         self.berry_feedback_seq += 1;
         self.golden_aura_until = Some((self.clock)() + chrono::Duration::seconds(3600));
+        let mon_id = self.state.active.as_ref().map(|a| a.current_id());
+        let is_shiny = self
+            .state
+            .active
+            .as_ref()
+            .map(|a| a.is_shiny)
+            .unwrap_or(false);
         if let Some(active) = self.state.active.as_mut() {
             active.add_ribbon("gourmet");
         }
+        self.add_journal_entry(
+            "berry",
+            "Fed Sitrus Berry 🍊",
+            "Boosted XP (+50M) and ignited a 1-hour Golden Sparkle Aura!",
+            "🍊",
+            mon_id,
+            is_shiny,
+        );
         self.apply_usage(SitrusBerry::XP);
         if self.state.active.is_none() {
             return CandyUseResult::Graduated;
@@ -785,11 +815,73 @@ impl CompanionStore {
         self.berry_feedback_kind = None;
     }
 
-    pub fn pet_buddy(&mut self) {
-        if let Some(active) = self.state.active.as_mut() {
-            active.add_ribbon("affection");
+    pub fn add_journal_entry(
+        &mut self,
+        kind: &str,
+        title: &str,
+        description: &str,
+        icon: &str,
+        species_id: Option<i64>,
+        is_shiny: bool,
+    ) {
+        let entry = JournalEntry {
+            id: Uuid::new_v4().to_string(),
+            timestamp: (self.clock)().to_rfc3339(),
+            kind: kind.to_string(),
+            title: title.to_string(),
+            description: description.to_string(),
+            icon: icon.to_string(),
+            species_id,
+            is_shiny,
+        };
+        self.state.journal.insert(0, entry);
+        if self.state.journal.len() > 100 {
+            self.state.journal.truncate(100);
+        }
+    }
+
+    pub fn set_trainer_name(&mut self, name: &str) {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() {
+            self.state.trainer_name = trimmed.to_string();
             self.save();
         }
+    }
+
+    pub fn set_trainer_avatar(&mut self, species_id: Option<i64>) {
+        self.state.avatar_species_id = species_id;
+        self.save();
+    }
+
+    pub fn trainer_title(&self) -> &'static str {
+        match self.state.used_since_install {
+            t if t >= 500_000_000 => "AI Grandmaster Champion",
+            t if t >= 100_000_000 => "Elite Four AI Champion",
+            t if t >= 50_000_000 => "Gym Leader Developer",
+            t if t >= 10_000_000 => "Ace Prompt Engineer",
+            t if t >= 1_000_000 => "Journeyman Coder",
+            _ => "Novice Pokémon Trainer",
+        }
+    }
+
+    pub fn pet_buddy(&mut self) {
+        let earned = if let Some(active) = self.state.active.as_mut() {
+            let newly = active.add_ribbon("affection");
+            Some((active.current_id(), active.is_shiny, newly))
+        } else {
+            None
+        };
+        if let Some((id, is_shiny, true)) = earned {
+            self.add_journal_entry(
+                "ribbon",
+                "Earned Best Buddy Ribbon! 💖",
+                "Bonded and showed affection to your companion.",
+                "💖",
+                Some(id),
+                is_shiny,
+            );
+        }
+        self.save();
     }
 
     pub fn active_ribbons(&self) -> Vec<String> {
@@ -806,29 +898,72 @@ impl CompanionStore {
     pub fn check_and_award_ribbons(&mut self) {
         let is_overdrive = self.is_mega_overdrive;
         let hour = (self.clock)().time().hour();
-        if let Some(active) = self.state.active.as_mut() {
-            active.add_ribbon("starter");
-            if active.is_shiny {
-                active.add_ribbon("shiny");
+        let mon_info = if let Some(active) = self.state.active.as_mut() {
+            let mut newly_earned = Vec::new();
+            if active.add_ribbon("starter") {
+                newly_earned.push("starter");
             }
-            if is_overdrive {
-                active.add_ribbon("overdrive");
+            if active.is_shiny && active.add_ribbon("shiny") {
+                newly_earned.push("shiny");
             }
-            if hour < 5 {
-                active.add_ribbon("nightOwl");
+            if is_overdrive && active.add_ribbon("overdrive") {
+                newly_earned.push("overdrive");
+            }
+            if hour < 5 && active.add_ribbon("nightOwl") {
+                newly_earned.push("nightOwl");
             }
             let cumulative = active.used_at_stage;
-            if cumulative >= 10_000_000 {
-                active.add_ribbon("bronzeBurner");
+            if cumulative >= 10_000_000 && active.add_ribbon("bronzeBurner") {
+                newly_earned.push("bronzeBurner");
             }
-            if cumulative >= 50_000_000 {
-                active.add_ribbon("silverBurner");
+            if cumulative >= 50_000_000 && active.add_ribbon("silverBurner") {
+                newly_earned.push("silverBurner");
             }
-            if cumulative >= 100_000_000 {
-                active.add_ribbon("goldBurner");
+            if cumulative >= 100_000_000 && active.add_ribbon("goldBurner") {
+                newly_earned.push("goldBurner");
             }
-            if cumulative >= 500_000_000 {
-                active.add_ribbon("platinumBurner");
+            if cumulative >= 500_000_000 && active.add_ribbon("platinumBurner") {
+                newly_earned.push("platinumBurner");
+            }
+            Some((active.current_id(), active.is_shiny, newly_earned))
+        } else {
+            None
+        };
+
+        if let Some((id, is_shiny, newly_earned)) = mon_info {
+            for rib in newly_earned {
+                let (name, desc) = match rib {
+                    "starter" => ("Starter Ribbon 🐣", "Began coding journey together."),
+                    "shiny" => ("Star Sparkle Ribbon ✨", "Gleaming Shiny companion honor."),
+                    "overdrive" => (
+                        "Overdrive Surge Ribbon ⚡",
+                        "Sprinted at blazing burn pace.",
+                    ),
+                    "nightOwl" => (
+                        "Midnight Coder Ribbon 🌙",
+                        "Burned tokens during late-night coding.",
+                    ),
+                    "bronzeBurner" => {
+                        ("Bronze 10M Ribbon 🥉", "Passed 10 Million lifetime tokens.")
+                    }
+                    "silverBurner" => {
+                        ("Silver 50M Ribbon 🥈", "Passed 50 Million lifetime tokens.")
+                    }
+                    "goldBurner" => ("Gold 100M Ribbon 🥇", "Passed 100 Million lifetime tokens."),
+                    "platinumBurner" => (
+                        "Titan 500M Ribbon 👑",
+                        "Passed 500 Million lifetime tokens.",
+                    ),
+                    _ => ("Honor Ribbon 🏅", "Earned a companion achievement."),
+                };
+                self.add_journal_entry(
+                    "ribbon",
+                    &format!("Earned {}!", name),
+                    desc,
+                    "🏅",
+                    Some(id),
+                    is_shiny,
+                );
             }
         }
     }
@@ -1160,6 +1295,11 @@ impl CompanionStore {
                 let delta = today_tokens_by_provider.values().sum::<i64>();
                 if delta > 0 {
                     self.state.used_since_install += delta * coin_multiplier;
+                    *self
+                        .state
+                        .daily_history
+                        .entry(today_date.to_string())
+                        .or_insert(0) += delta;
                     if self.state.active.is_none() {
                         self.state.egg_usage += delta;
                     } else {
@@ -1192,6 +1332,11 @@ impl CompanionStore {
                 self.state.claimed_today_tokens_by_provider = Some(ledger);
                 if delta > 0 {
                     self.state.used_since_install += delta * coin_multiplier;
+                    *self
+                        .state
+                        .daily_history
+                        .entry(today_date.to_string())
+                        .or_insert(0) += delta;
                     if self.state.active.is_none() {
                         self.state.egg_usage += delta; // egg incubation accrual
                     } else {
@@ -1328,7 +1473,18 @@ impl CompanionStore {
                 active.stage_index += 1;
                 active.used_at_stage -= thr; // overflow carries
                 let new_name = line.localized_name(next.species_id, self.state.language);
-                self.just_evolved_to = Some(new_name);
+                self.just_evolved_to = Some(new_name.clone());
+                self.add_journal_entry(
+                    "evolution",
+                    &format!("Evolved into {}! ✨", new_name),
+                    &format!(
+                        "Reached Stage {} after powering up with AI coding tokens.",
+                        active.stage_index + 1
+                    ),
+                    "✨",
+                    Some(next.species_id),
+                    active.is_shiny,
+                );
                 self.fire_celebration(Celebration::Evolve);
                 self.event_until = Some((self.clock)() + chrono::Duration::seconds(4));
                 self.notify_companion_event("", "");
@@ -1488,7 +1644,15 @@ impl CompanionStore {
             .as_ref()
             .map(|line| line.localized_name(final_id, self.state.language))
             .unwrap_or_default();
-        self.just_graduated = Some(name);
+        self.just_graduated = Some(name.clone());
+        self.add_journal_entry(
+            "graduate",
+            &format!("{} Graduated! 🎓", name),
+            "Reached final evolutionary stage and entered the Pokédex Hall of Fame!",
+            "🎓",
+            Some(final_id),
+            active.is_shiny,
+        );
         self.notify_companion_event("", "");
         self.event_until = Some((self.clock)() + chrono::Duration::seconds(6));
         self.state.active = None;
@@ -1606,6 +1770,14 @@ impl CompanionStore {
             false,
         ));
         let name = line.localized_name(line.base_id, self.state.language);
+        self.add_journal_entry(
+            "hatch",
+            &format!("Hatched {}! 🐣", name),
+            &format!("A new {} companion joined your coding journey.", name),
+            "🐣",
+            Some(line.base_id),
+            is_shiny,
+        );
         self.notify_companion_event("", &name);
         self.just_evolved_to = None; // a fresh hatch is "growth", not "evolved"
         self.display_state = CompanionStateKind::LevelUp;
@@ -4243,6 +4415,50 @@ mod tests {
         assert!(mon.ribbons.contains(&"starter".to_string()));
         assert!(mon.ribbons.contains(&"affection".to_string()));
         assert!(mon.ribbons.contains(&"gourmet".to_string()));
+    }
+
+    #[test]
+    fn test_trainer_passport_and_journal() {
+        let mut s = store_for(linear3(), vec![1, 2, 3]);
+        s.hatch(1);
+
+        // 1. Trainer Defaults
+        assert_eq!(s.state.trainer_name, "Trainer");
+        assert!(s.state.trainer_id.starts_with("TR-"));
+        assert_eq!(s.trainer_title(), "Novice Pokémon Trainer");
+
+        // 2. Customizing Trainer Name & Avatar
+        s.set_trainer_name("Ash Ketchum");
+        assert_eq!(s.state.trainer_name, "Ash Ketchum");
+        s.set_trainer_avatar(Some(25));
+        assert_eq!(s.state.avatar_species_id, Some(25));
+
+        // 3. Journal captures Hatching
+        assert!(!s.state.journal.is_empty());
+        let first_entry = s.state.journal.iter().find(|j| j.kind == "hatch").unwrap();
+        assert_eq!(first_entry.species_id, Some(1));
+
+        // 4. Daily history updates with tokens
+        let mut provider_tokens = HashMap::new();
+        provider_tokens.insert("claude".to_string(), 500);
+        s.update(
+            &provider_tokens,
+            "2026-08-21",
+            0,
+            BurnTier::Normal,
+            false,
+            true,
+        );
+        provider_tokens.insert("claude".to_string(), 1500);
+        s.update(
+            &provider_tokens,
+            "2026-08-21",
+            0,
+            BurnTier::Normal,
+            false,
+            true,
+        );
+        assert_eq!(s.state.daily_history.get("2026-08-21"), Some(&1000));
     }
 
     impl CompanionStore {

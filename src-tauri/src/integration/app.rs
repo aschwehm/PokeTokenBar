@@ -4,6 +4,7 @@
 //! serializable [`Snapshot`] to the webview, plus the mutating commands the UI
 //! invokes (refresh, buy, use items, hatch, set language).
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
@@ -11,7 +12,9 @@ use tauri::State;
 
 use crate::companion::store::{BurnTier, Celebration, CompanionStore, DexSpecies};
 use crate::companion::usage_store::UsageStore;
-use crate::domain::companion::{AppLanguage, CompanionState, CompanionStateKind, ItemKind, Rarity};
+use crate::domain::companion::{
+    AppLanguage, CompanionState, CompanionStateKind, ItemKind, JournalEntry, Rarity,
+};
 use crate::domain::models::ProviderSnapshot;
 
 /// The single managed app state, shared with Tauri as `tauri::State`.
@@ -96,6 +99,12 @@ pub struct CompanionView {
     pub just_evolved_to: Option<String>,
     pub just_graduated: Option<String>,
     pub ribbons: Vec<String>,
+    pub trainer_name: String,
+    pub trainer_id: String,
+    pub trainer_title: &'static str,
+    pub avatar_species_id: Option<i64>,
+    pub journal: Vec<JournalEntry>,
+    pub daily_history: HashMap<String, i64>,
 }
 
 #[derive(Serialize)]
@@ -302,6 +311,12 @@ fn build_snapshot(inner: &StateInner) -> Snapshot {
         just_evolved_to: c.just_evolved_to.clone(),
         just_graduated: c.just_graduated.clone(),
         ribbons: c.active_ribbons(),
+        trainer_name: c.state.trainer_name.clone(),
+        trainer_id: c.state.trainer_id.clone(),
+        trainer_title: c.trainer_title(),
+        avatar_species_id: c.state.avatar_species_id,
+        journal: c.state.journal.clone(),
+        daily_history: c.state.daily_history.clone(),
     };
 
     let usage = UsageView {
@@ -552,6 +567,23 @@ pub fn consume_celebration(state: State<'_, AppState>) -> Result<Snapshot, Strin
 pub fn pet_buddy(state: State<'_, AppState>) -> Result<Snapshot, String> {
     let mut inner = state.lock().map_err(|e| e.to_string())?;
     inner.companion.pet_buddy();
+    Ok(build_snapshot(&inner))
+}
+
+#[tauri::command]
+pub fn set_trainer_name(state: State<'_, AppState>, name: String) -> Result<Snapshot, String> {
+    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    inner.companion.set_trainer_name(&name);
+    Ok(build_snapshot(&inner))
+}
+
+#[tauri::command]
+pub fn set_trainer_avatar(
+    state: State<'_, AppState>,
+    species_id: Option<i64>,
+) -> Result<Snapshot, String> {
+    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    inner.companion.set_trainer_avatar(species_id);
     Ok(build_snapshot(&inner))
 }
 
