@@ -16,7 +16,7 @@ It monitors the AI coding tokens you burn across 10 tools (Claude Code, Codex, G
 > - **🕹️ Desktop Pet 2.0**: Interactive petting animations (Happy Hop, Playful Wiggle, Floating Hearts), 15-minute Sleep & Wake cycle with floating `Zzz` bubbles, and Sitrus Berry golden sparkle aura.
 > - **🎒 PokéShop & Bag Item Lore**: Comprehensive descriptions and live effect tiles for Rare Candies, Nature Mints, Oran Berries, Sitrus Berries, and Shiny Charms.
 > - **Interactive Pokédex Detail Modal**: Click any discovered Pokémon to read its official game Pokédex lore, classification, height, weight, category, and earned ribbons.
-> - **337 passing unit tests**. See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md).
+> - **337 passing unit tests**. See [CHANGELOG.md](CHANGELOG.md), [docs/architecture.md](docs/architecture.md), and [docs/roadmap.md](docs/roadmap.md).
 
 > [!IMPORTANT]
 > **Provider Testing & Verification Status**:

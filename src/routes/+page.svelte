@@ -1049,7 +1049,7 @@
           <div class="about-box">
             <div class="about-header">
               <span>PokéTokenBar</span>
-              <span class="version-tag">v0.3.4</span>
+              <span class="version-tag">v0.3.6</span>
             </div>
             <p class="about-sub">Pokémon companion for AI coding tokens on Windows & Linux.</p>
           </div>
