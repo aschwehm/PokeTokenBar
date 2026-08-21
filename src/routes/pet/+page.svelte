@@ -3,6 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { resolveOverdrive } from "$lib/mega";
 
   interface CompanionView {
     displayName: string;
@@ -15,6 +16,8 @@
     eggProgress: number;
     hasGoldenAura?: boolean;
     berryFeedback?: string | null;
+    isMegaOverdrive?: boolean;
+    megaOverdriveEnabled?: boolean;
   }
 
   interface UsageView {
@@ -238,6 +241,10 @@
     {@const circ = 326.73}
     {@const strokeDash = circ * (1 - currentProg)}
     {@const hasGoldenAura = c.hasGoldenAura}
+    {@const isOverdrive = Boolean(c.isMegaOverdrive || ((u.burnTier === "fast" || u.burnTier === "blazing") && c.megaOverdriveEnabled))}
+    {@const overdriveInfo = isOverdrive && c.hasActive && !c.isEgg ? resolveOverdrive(c.currentSpeciesId, c.displayName) : null}
+    {@const spriteId = overdriveInfo ? overdriveInfo.spriteId : c.currentSpeciesId}
+    {@const petName = overdriveInfo ? overdriveInfo.displayName : c.displayName}
 
     <div
       class="pet-wrapper"
@@ -245,6 +252,7 @@
       class:focus={u.burnTier === "fast"}
       class:sleeping={isSleeping}
       class:golden-aura={hasGoldenAura}
+      class:overdrive={isOverdrive}
     >
       <!-- Circular Progress Ring -->
       <svg class="progress-ring" viewBox="0 0 116 116">
@@ -269,6 +277,12 @@
             <stop offset="0%" stop-color="#FCD34D" />
             <stop offset="100%" stop-color="#F59E0B" />
           </linearGradient>
+          <linearGradient id="ring-grad-overdrive" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#FF007A" />
+            <stop offset="35%" stop-color="#FF9900" />
+            <stop offset="70%" stop-color="#FFEA00" />
+            <stop offset="100%" stop-color="#00E5FF" />
+          </linearGradient>
         </defs>
 
         <!-- Track Ring -->
@@ -280,7 +294,9 @@
           cy="58"
           r="52"
           class="ring-progress-fill"
-          stroke={hasGoldenAura
+          stroke={isOverdrive
+            ? "url(#ring-grad-overdrive)"
+            : hasGoldenAura
             ? "url(#ring-grad-gold)"
             : isSleeping
             ? "url(#ring-grad-sleep)"
@@ -298,7 +314,7 @@
       <div class="sprite-stage">
         {#if c.isEgg}
           <div class="egg-sprite" class:hop={animState === "hop"}>🥚</div>
-        {:else if c.hasActive && c.currentSpeciesId}
+        {:else if c.hasActive && spriteId}
           <img
             class="sprite"
             class:bounce={u.burnTier === "fast" || u.burnTier === "blazing"}
@@ -308,11 +324,21 @@
             class:wiggle={animState === "wiggle"}
             class:wake-up={animState === "wake"}
             class:eating={animState === "eating"}
-            src={spriteUrl(c.currentSpeciesId, c.isShiny)}
-            alt={c.displayName}
+            class:overdrive-sprite={isOverdrive}
+            src={spriteUrl(spriteId, c.isShiny)}
+            alt={petName}
             draggable="false"
-            onerror={(e) => fallbackStaticSprite(e, c.currentSpeciesId ?? 1, c.isShiny)}
+            onerror={(e) => fallbackStaticSprite(e, spriteId ?? 1, c.isShiny)}
           />
+        {/if}
+
+        <!-- Overdrive Sparks -->
+        {#if isOverdrive}
+          <div class="overdrive-sparks-box">
+            <span class="pet-od-spark pod-1">⚡</span>
+            <span class="pet-od-spark pod-2">🧬</span>
+            <span class="pet-od-spark pod-3">💥</span>
+          </div>
         {/if}
 
         <!-- Floating Zzz Sleep Bubbles -->
@@ -346,7 +372,9 @@
       </div>
 
       <!-- Burn Pace / Sleep Status Badge (Top-Right) -->
-      {#if isSleeping}
+      {#if isOverdrive && overdriveInfo}
+        <div class="status-badge overdrive-badge" title="Mega Overdrive (2× Coins Active!)">{overdriveInfo.mode === 'gmax' ? '⚡' : '🧬'}</div>
+      {:else if isSleeping}
         <div class="status-badge sleep-badge" title="Sleeping (Click to pet & wake up)">💤</div>
       {:else if hasGoldenAura}
         <div class="status-badge gold-badge" title="Sitrus Sparkle Aura Active! ✨">🌟</div>
@@ -684,6 +712,60 @@
     border-color: rgba(245, 158, 11, 0.8);
     box-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
     background: #241c0e;
+  }
+
+  /* Mega Overdrive Styles */
+  .pet-wrapper.overdrive {
+    box-shadow: 0 0 26px rgba(255, 0, 122, 0.7), inset 0 0 16px rgba(0, 229, 255, 0.3);
+    animation: petOverdrivePulse 2s infinite ease-in-out;
+  }
+
+  @keyframes petOverdrivePulse {
+    0%, 100% {
+      box-shadow: 0 0 24px rgba(255, 0, 122, 0.7), inset 0 0 14px rgba(0, 229, 255, 0.3);
+    }
+    50% {
+      box-shadow: 0 0 34px rgba(0, 229, 255, 0.85), inset 0 0 20px rgba(255, 0, 122, 0.45);
+    }
+  }
+
+  .sprite.overdrive-sprite {
+    filter: drop-shadow(0 0 14px rgba(255, 0, 122, 0.8)) drop-shadow(0 0 20px rgba(0, 229, 255, 0.6)) !important;
+  }
+
+  .overdrive-sparks-box {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .pet-od-spark {
+    position: absolute;
+    font-size: 14px;
+    animation: sparkFlash 1.2s infinite ease-in-out;
+    filter: drop-shadow(0 0 8px #FF007A);
+  }
+  .pet-od-spark.pod-1 { top: 2px; left: 4px; animation-delay: 0s; }
+  .pet-od-spark.pod-2 { top: 6px; right: 4px; animation-delay: 0.4s; font-size: 12px; }
+  .pet-od-spark.pod-3 { bottom: 4px; left: 18px; animation-delay: 0.8s; font-size: 13px; }
+
+  .status-badge.overdrive-badge {
+    border-color: rgba(255, 0, 122, 0.85);
+    box-shadow: 0 0 14px rgba(255, 0, 122, 0.75);
+    background: linear-gradient(135deg, #FF007A, #7928CA);
+    color: #FFF;
+    font-size: 12px;
+    animation: pulseMegaBadge 1.8s infinite ease-in-out;
+  }
+
+  @keyframes pulseMegaBadge {
+    0%, 100% { transform: scale(1); filter: brightness(1); }
+    50% { transform: scale(1.08); filter: brightness(1.25); }
+  }
+
+  @keyframes sparkFlash {
+    0%, 100% { opacity: 0.2; transform: scale(0.7) translateY(0); }
+    50% { opacity: 1; transform: scale(1.2) translateY(-4px); }
   }
 </style>
 

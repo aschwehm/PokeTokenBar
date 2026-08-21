@@ -144,6 +144,8 @@ pub struct CompanionStore {
     pub berry_feedback_seq: u64,
     pub berry_feedback_kind: Option<String>,
     pub golden_aura_until: Option<DateTime<Utc>>,
+    pub mega_overdrive_enabled: bool,
+    pub is_mega_overdrive: bool,
     provider: Box<dyn PokeProvider>,
     clock: fn() -> DateTime<Utc>,
     file_url: PathBuf,
@@ -193,6 +195,8 @@ impl CompanionStore {
             berry_feedback_seq: 0,
             berry_feedback_kind: None,
             golden_aura_until: None,
+            mega_overdrive_enabled: false,
+            is_mega_overdrive: false,
             provider,
             clock,
             file_url,
@@ -758,6 +762,14 @@ impl CompanionStore {
         self.berry_feedback_kind = None;
     }
 
+    pub fn set_mega_overdrive_enabled(&mut self, enabled: bool) {
+        self.mega_overdrive_enabled = enabled;
+    }
+
+    pub fn is_mega_overdrive_active(&self) -> bool {
+        self.is_mega_overdrive
+    }
+
     // MARK: mint (nature reroll)
 
     /// Mint usable with an active mon + stock. Nature lives on `MonState`
@@ -1018,6 +1030,11 @@ impl CompanionStore {
         limit_warning: bool,
         has_usage_data: bool,
     ) {
+        let is_overdrive = self.mega_overdrive_enabled
+            && (burn_tier == BurnTier::Fast || burn_tier == BurnTier::Blazing);
+        self.is_mega_overdrive = is_overdrive;
+        let coin_multiplier = if is_overdrive { 2 } else { 1 };
+
         let today_tokens: i64 = today_tokens_by_provider.values().sum();
         // hasUsageData = a display snapshot exists; this map only carries data
         // whose today-date was confirmed. A stale snapshot or carrier-only
@@ -1071,7 +1088,7 @@ impl CompanionStore {
                 self.state.claimed_today_tokens_by_provider = Some(new_ledger);
                 let delta = today_tokens_by_provider.values().sum::<i64>();
                 if delta > 0 {
-                    self.state.used_since_install += delta;
+                    self.state.used_since_install += delta * coin_multiplier;
                     if self.state.active.is_none() {
                         self.state.egg_usage += delta;
                     } else {
@@ -1103,7 +1120,7 @@ impl CompanionStore {
                 }
                 self.state.claimed_today_tokens_by_provider = Some(ledger);
                 if delta > 0 {
-                    self.state.used_since_install += delta;
+                    self.state.used_since_install += delta * coin_multiplier;
                     if self.state.active.is_none() {
                         self.state.egg_usage += delta; // egg incubation accrual
                     } else {
@@ -4047,6 +4064,69 @@ mod tests {
         assert_eq!(s.state.active.as_ref().unwrap().used_at_stage, 65_000_000);
         assert_eq!(s.berry_feedback_kind.as_deref(), Some("sitrusBerry"));
         assert!(s.has_golden_aura());
+    }
+
+    #[test]
+    fn test_mega_overdrive_and_coin_rush() {
+        let mut s = store_for(linear3(), vec![1, 2, 3]);
+        s.hatch(1);
+        assert!(!s.mega_overdrive_enabled);
+        assert!(!s.is_mega_overdrive);
+
+        let mut provider_tokens = HashMap::new();
+        provider_tokens.insert("claude".to_string(), 100);
+
+        // 1. Initial baseline
+        s.update(
+            &provider_tokens,
+            "2026-08-21",
+            0,
+            BurnTier::Normal,
+            false,
+            true,
+        );
+        assert_eq!(s.available_tokens(), 0);
+
+        // 2. Normal tier with overdrive disabled
+        provider_tokens.insert("claude".to_string(), 200);
+        s.update(
+            &provider_tokens,
+            "2026-08-21",
+            0,
+            BurnTier::Normal,
+            false,
+            true,
+        );
+        assert_eq!(s.available_tokens(), 100);
+        assert!(!s.is_mega_overdrive);
+
+        // 3. Fast burn tier but overdrive still disabled -> 1x token delta
+        provider_tokens.insert("claude".to_string(), 300);
+        s.update(
+            &provider_tokens,
+            "2026-08-21",
+            0,
+            BurnTier::Fast,
+            false,
+            true,
+        );
+        assert_eq!(s.available_tokens(), 200);
+        assert!(!s.is_mega_overdrive);
+
+        // 4. Enable mega overdrive and blazing tier -> 2x Coin Rush!
+        s.set_mega_overdrive_enabled(true);
+        provider_tokens.insert("claude".to_string(), 400);
+        s.update(
+            &provider_tokens,
+            "2026-08-21",
+            0,
+            BurnTier::Blazing,
+            false,
+            true,
+        );
+        assert!(s.is_mega_overdrive);
+        // +100 delta * 2 multiplier = +200 coins -> total 400 available tokens
+        assert_eq!(s.available_tokens(), 400);
     }
 
     impl CompanionStore {

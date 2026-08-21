@@ -4,6 +4,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { isEnabled, enable, disable } from "@tauri-apps/plugin-autostart";
   import { onMount } from "svelte";
+  import { resolveOverdrive } from "$lib/mega";
 
   interface ShopEntry {
     kind: string;
@@ -43,6 +44,8 @@
     justGraduated: string | null;
     hasGoldenAura?: boolean;
     berryFeedback?: string | null;
+    isMegaOverdrive?: boolean;
+    megaOverdriveEnabled?: boolean;
   }
 
   interface ProviderView {
@@ -351,10 +354,22 @@
     }
   }
 
+  let megaOverdriveSetting = $state(false);
+
   function toggleAnimatedSprites() {
     animatedSprites = !animatedSprites;
     try {
       localStorage.setItem("ptb_animated_sprites", animatedSprites ? "true" : "false");
+    } catch {
+      // ignore
+    }
+  }
+
+  async function toggleMegaOverdrive() {
+    megaOverdriveSetting = !megaOverdriveSetting;
+    try {
+      localStorage.setItem("ptb_mega_overdrive", megaOverdriveSetting ? "true" : "false");
+      snap = await invoke<Snapshot>("set_mega_overdrive_enabled", { enabled: megaOverdriveSetting });
     } catch {
       // ignore
     }
@@ -374,6 +389,15 @@
       const savedAnimated = localStorage.getItem("ptb_animated_sprites");
       if (savedAnimated !== null) {
         animatedSprites = savedAnimated === "true";
+      }
+      const savedOverdrive = localStorage.getItem("ptb_mega_overdrive");
+      if (savedOverdrive !== null) {
+        megaOverdriveSetting = savedOverdrive === "true";
+        invoke<Snapshot>("set_mega_overdrive_enabled", { enabled: megaOverdriveSetting })
+          .then((s) => {
+            if (s) snap = s;
+          })
+          .catch(() => {});
       }
     } catch {
       // ignore
@@ -759,6 +783,16 @@
 
             <div class="setting-row">
               <div class="setting-text">
+                <span class="setting-label">⚡ Mega Overdrive & G-Max</span>
+                <span class="setting-sub">Mega Evolve & 2× Coin Rush during Fast / Blazing sprints</span>
+              </div>
+              <button class="toggle-switch" class:active={megaOverdriveSetting} onclick={toggleMegaOverdrive} aria-label="Toggle Mega Overdrive">
+                <span class="toggle-handle"></span>
+              </button>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-text">
                 <span class="setting-label">Desktop Pet Widget</span>
                 <span class="setting-sub">Floating Pokémon companion on screen</span>
               </div>
@@ -805,7 +839,7 @@
           <div class="about-box">
             <div class="about-header">
               <span>PokéTokenBar</span>
-              <span class="version-tag">v0.3.1</span>
+              <span class="version-tag">v0.3.4</span>
             </div>
             <p class="about-sub">Pokémon companion for AI coding tokens on Windows & Linux.</p>
           </div>
@@ -863,6 +897,10 @@
                 </div>
               </div>
             {:else if c.hasActive && c.currentSpeciesId}
+              {@const isOverdriveActive = Boolean(c.isMegaOverdrive || (megaOverdriveSetting && (u.burnTier === "fast" || u.burnTier === "blazing")))}
+              {@const overdriveInfo = isOverdriveActive ? resolveOverdrive(c.currentSpeciesId, c.displayName) : null}
+              {@const effectiveSpeciesId = overdriveInfo ? overdriveInfo.spriteId : c.currentSpeciesId}
+              {@const effectiveName = overdriveInfo ? overdriveInfo.displayName : c.displayName}
               {@const typeInfo = getTypes(c.currentSpeciesId)}
               {@const stageInfo = getStageInfo(c.stageText, c.isFinalStage)}
               {@const growthPct = Math.round(c.progress * 100)}
@@ -871,11 +909,15 @@
                 class="buddy-hero"
                 class:sleeping-hero={isSleepingHero}
                 class:golden-hero={c.hasGoldenAura}
+                class:overdrive-hero={isOverdriveActive}
               >
-                <div class="hero-glow" style="background: radial-gradient(circle, {typeInfo.primary.bg.replace('0.14', '0.22')}, transparent 70%);"></div>
+                <div class="hero-glow" style="background: radial-gradient(circle, {isOverdriveActive ? 'rgba(255, 0, 122, 0.28)' : typeInfo.primary.bg.replace('0.14', '0.22')}, transparent 70%);"></div>
                 <div class="hero-header-row">
                   <div class="hero-tag-group">
                     <span class="section-tag">ACTIVE BUDDY</span>
+                    {#if isOverdriveActive && overdriveInfo}
+                      <span class="hero-overdrive-pill">{overdriveInfo.badge}</span>
+                    {/if}
                     {#if isSleepingHero}
                       <span class="hero-sleep-pill">💤 Sleeping</span>
                     {:else if c.hasGoldenAura}
@@ -916,10 +958,19 @@
                       class:wake-up={heroAnimState === "wake"}
                       class:eating={heroAnimState === "eating"}
                       class:sleeping-mon={isSleepingHero}
-                      src={spriteUrl(c.currentSpeciesId, c.isShiny)}
-                      alt={c.displayName}
-                      onerror={(e) => fallbackStaticSprite(e, c.currentSpeciesId ?? 1, c.isShiny)}
+                      class:overdrive-sprite={isOverdriveActive}
+                      src={spriteUrl(effectiveSpeciesId, c.isShiny)}
+                      alt={effectiveName}
+                      onerror={(e) => fallbackStaticSprite(e, effectiveSpeciesId ?? 1, c.isShiny)}
                     />
+
+                    {#if isOverdriveActive}
+                      <div class="hero-overdrive-sparks">
+                        <span class="od-spark od-1">⚡</span>
+                        <span class="od-spark od-2">🧬</span>
+                        <span class="od-spark od-3">💥</span>
+                      </div>
+                    {/if}
 
                     {#if isSleepingHero}
                       <div class="hero-zzz-box">
@@ -948,7 +999,7 @@
                   <div class="hero-details">
                     <div class="name-row">
                       <span class="mon-name">
-                        {c.displayName}
+                        {effectiveName}
                         {#if c.isShiny}<span class="shiny-star" title="Shiny!">✨</span>{/if}
                       </span>
                       <span class="rarity-badge">{rarityLabel[c.rarity ?? ""] ?? "Common"}</span>
@@ -1137,8 +1188,15 @@
         {/if}
 
         {#if currentTab === "shop"}
+          {@const isOverdriveActive = Boolean(c.isMegaOverdrive || (megaOverdriveSetting && (u.burnTier === "fast" || u.burnTier === "blazing")))}
           <div class="tab-pane">
-            <div class="wallet-card">
+            <div class="wallet-card" class:overdrive-wallet={isOverdriveActive}>
+              {#if isOverdriveActive}
+                <div class="coin-rush-badge">
+                  <span class="rush-icon">⚡</span>
+                  <span class="rush-text">2× COIN RUSH ACTIVE (MEGA OVERDRIVE)</span>
+                </div>
+              {/if}
               <svg width="120" height="120" viewBox="0 0 24 24" class="wallet-watermark">
                 <circle cx="12" cy="12" r="9.5" fill="none" stroke="#fff" stroke-width="1.4"></circle>
                 <path d="M2.5 12h19" stroke="#fff" stroke-width="1.4"></path>
@@ -3154,5 +3212,90 @@
   .quick-btn.berry-btn.gold:hover:not(:disabled) {
     background: rgba(245, 158, 11, 0.18);
     border-color: rgba(245, 158, 11, 0.45);
+  }
+
+  /* Mega Overdrive & Gigantamax Surge */
+  .buddy-hero.overdrive-hero {
+    border-color: rgba(255, 0, 122, 0.45);
+    box-shadow: 0 0 25px rgba(255, 0, 122, 0.25), inset 0 0 16px rgba(0, 229, 255, 0.12);
+    animation: overdriveHeroPulse 2.8s infinite ease-in-out;
+  }
+
+  @keyframes overdriveHeroPulse {
+    0%, 100% {
+      border-color: rgba(255, 0, 122, 0.45);
+      box-shadow: 0 0 25px rgba(255, 0, 122, 0.25), inset 0 0 16px rgba(0, 229, 255, 0.12);
+    }
+    50% {
+      border-color: rgba(0, 229, 255, 0.55);
+      box-shadow: 0 0 35px rgba(0, 229, 255, 0.35), inset 0 0 20px rgba(255, 0, 122, 0.2);
+    }
+  }
+
+  .hero-overdrive-pill {
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #FF007A, #7928CA, #0070F3);
+    color: #FFFFFF;
+    letter-spacing: 0.04em;
+    box-shadow: 0 0 12px rgba(255, 0, 122, 0.6);
+    animation: pulseMegaBadge 1.8s infinite ease-in-out;
+  }
+
+  @keyframes pulseMegaBadge {
+    0%, 100% { transform: scale(1); filter: brightness(1); }
+    50% { transform: scale(1.06); filter: brightness(1.25); }
+  }
+
+  .hero-sprite.overdrive-sprite {
+    filter: drop-shadow(0 0 16px rgba(255, 0, 122, 0.75)) drop-shadow(0 0 24px rgba(0, 229, 255, 0.6)) !important;
+  }
+
+  .hero-overdrive-sparks {
+    position: absolute;
+    inset: -8px;
+    pointer-events: none;
+  }
+
+  .od-spark {
+    position: absolute;
+    font-size: 15px;
+    animation: sparkFlash 1.4s infinite ease-in-out;
+    filter: drop-shadow(0 0 8px #FF007A);
+  }
+  .od-spark.od-1 { top: -2px; left: 4px; animation-delay: 0s; }
+  .od-spark.od-2 { top: 2px; right: -2px; animation-delay: 0.5s; font-size: 13px; }
+  .od-spark.od-3 { bottom: -2px; left: 24px; animation-delay: 0.9s; font-size: 14px; }
+
+  @keyframes sparkFlash {
+    0%, 100% { opacity: 0.2; transform: scale(0.7) translateY(0); }
+    50% { opacity: 1; transform: scale(1.2) translateY(-4px); }
+  }
+
+  /* 2x Coin Rush Banner */
+  .wallet-card.overdrive-wallet {
+    border-color: rgba(255, 234, 0, 0.45);
+    box-shadow: 0 0 20px rgba(255, 234, 0, 0.25);
+  }
+
+  .coin-rush-badge {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(255, 234, 0, 0.2), rgba(255, 107, 0, 0.25));
+    border: 1px solid rgba(255, 234, 0, 0.6);
+    color: #FFEA00;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    animation: goldPulseText 1.5s infinite ease-in-out;
+    z-index: 2;
   }
 </style>

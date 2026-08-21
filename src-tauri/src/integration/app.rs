@@ -91,6 +91,8 @@ pub struct CompanionView {
     pub mint_feedback: Option<String>,
     pub berry_feedback: Option<String>,
     pub has_golden_aura: bool,
+    pub is_mega_overdrive: bool,
+    pub mega_overdrive_enabled: bool,
     pub just_evolved_to: Option<String>,
     pub just_graduated: Option<String>,
 }
@@ -292,6 +294,8 @@ fn build_snapshot(inner: &StateInner) -> Snapshot {
             .map(|n| n.name(c.language()).to_string()),
         berry_feedback: c.berry_feedback_kind.clone(),
         has_golden_aura: c.has_golden_aura(),
+        is_mega_overdrive: c.is_mega_overdrive,
+        mega_overdrive_enabled: c.mega_overdrive_enabled,
         just_evolved_to: c.just_evolved_to.clone(),
         just_graduated: c.just_graduated.clone(),
     };
@@ -517,6 +521,19 @@ pub fn set_language(state: State<'_, AppState>, lang: String) -> Result<Snapshot
     if let Some(l) = AppLanguage::from_raw(&lang) {
         inner.companion.set_language(l);
     }
+    Ok(build_snapshot(&inner))
+}
+
+#[tauri::command]
+pub fn set_mega_overdrive_enabled(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<Snapshot, String> {
+    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    inner.companion.set_mega_overdrive_enabled(enabled);
+    let burn_tier = inner.usage.burn_tier();
+    inner.companion.is_mega_overdrive = enabled
+        && (burn_tier == BurnTier::Fast || burn_tier == BurnTier::Blazing);
     Ok(build_snapshot(&inner))
 }
 
