@@ -6,6 +6,7 @@
 //!
 //! Everything here must compile and be testable on Linux, Windows, and macOS.
 
+pub mod battle;
 pub mod companion;
 pub mod decoding;
 pub mod format;
@@ -13,6 +14,7 @@ pub mod models;
 pub mod pricing;
 pub mod save;
 
+pub use battle::*;
 pub use companion::*;
 pub use decoding::*;
 pub use format::*;

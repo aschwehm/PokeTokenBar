@@ -16,6 +16,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.0] - 2026-08-21
+
+### Added
+- **⚔️ Retro Pokémon Battle Arena (1v1 Turn-Based Mini-Game)**:
+  - **Dedicated ⚔️ Arena Tab**: Added a 6th main tab featuring matchmaking, battle career stats, live 1v1 duels, and the BP Exchange Shop.
+  - **Matchmaking & Roster Selection**: Fight alongside your active companion or choose any graduated champion from your Pokédex.
+  - **Authentic 18-Type Matchup Engine**: Full Pokémon elemental effectiveness chart supporting dual types, 2× Super Effective, 0.5× Resistances, and 0× Immunities.
+  - **Signature 4-Move Generation**: Automatically outfits every species with a tailored 4-move set based on their elemental types (STAB elemental blasts, status heals/buffs, priority strikes, and coverage moves).
+  - **Hybrid Stat & Combat Formula**: Scaled base species stats, evolution stage tiers, +5% damage multiplier per earned Ribbon, and critical hit surges during Mega Overdrive.
+  - **Smart Opponent AI**: Evaluates elemental effectiveness, STAB advantages, priority triggers, and healing thresholds.
+  - **Classic Game Boy / GBA Battle Stage Layout**:
+    - Opponent stage (top right) and player stage (bottom left) with animated battle sprites, shadow platforms, and Mega Overdrive auras.
+    - Pixel-perfect HP HUD gauges with dynamic color transitions (Green > 50%, Amber > 20%, Red).
+    - 4-move tactile command button grid showing PP, Category (⚔️ Physical, 🔮 Special, ✨ Status), Power, and Element badges.
+    - Retro Combat Terminal feed logging every attack, critical strike, super-effective hit, and battle event.
+    - Victory and Defeat banner overlays with reward summaries and quick rematch options.
+  - **🏆 Battle Points (BP) Economy & Exchange Shelf**:
+    - Win battles to earn +25 BP (plus win streak bonuses) and +100 PokéCoins (doubled to +200 Coins if Overdrive active).
+    - Consolation rewards (+5 BP, +20 Coins) on defeat.
+    - Dedicated BP shop to redeem Battle Points for Rare Candies (20 BP), Nature Mints (15 BP), Oran Berries (15 BP), Sitrus Berries (35 BP), Shiny Charms (100 BP), Epic Eggs (50 BP), and Legendary Eggs (120 BP).
+  - **🏅 12th Ribbon — Arena Champion**: Awarded to Pokémon that triumph in the Battle Arena.
+  - **📜 PokéJournal Arena Logs**: Automatic diary entries capturing glorious victories and brave duels.
+  - **Unit Tests**: Full test suite expanded to 342 tests with dedicated engine tests for damage calculations, type matrices, AI choices, and battle lifecycles.
+
+---
+
 ## [0.3.7] - 2026-08-21
 
 ### Fixed

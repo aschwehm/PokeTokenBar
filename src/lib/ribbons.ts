@@ -132,6 +132,17 @@ export const ALL_RIBBONS: Record<string, RibbonDefinition> = {
     color: "#FBBF24",
     glow: "rgba(251, 191, 36, 0.55)",
   },
+  arenaChampion: {
+    id: "arenaChampion",
+    name: "Arena Champion Ribbon",
+    badge: "⚔️ Arena Victor",
+    icon: "⚔️",
+    title: "The Battle Arena Victor",
+    description: "Awarded for conquering a rival Pokémon in the Battle Arena mini-game.",
+    category: "special",
+    color: "#EF4444",
+    glow: "rgba(239, 68, 68, 0.5)",
+  },
 };
 
 export const ORDERED_RIBBON_IDS = [
@@ -146,6 +157,7 @@ export const ORDERED_RIBBON_IDS = [
   "platinumBurner",
   "graduate",
   "shiny",
+  "arenaChampion",
 ];
 
 export function getRibbon(id: string): RibbonDefinition | undefined {

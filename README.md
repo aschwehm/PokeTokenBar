@@ -6,17 +6,18 @@ This project is a from-scratch cross-platform port of the original macOS menu-ba
 
 It monitors the AI coding tokens you burn across 10 tools (Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI, Copilot CLI, Kiro CLI) and turns them into a growing, evolving Pokémon buddy right on your desktop.
 
-> **Status: v0.3.7 — Trainer Passport, GitHub Activity Heatmap & PokéJournal (Linux & Windows).**
+> **Status: v0.4.0 — Retro Pokémon Battle Arena, Trainer Passport & Token Heatmap (Linux & Windows).**
 > - **10 Supported AI Providers**: Claude Code, Codex, Gemini CLI / AGY, Grok CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Copilot CLI, Kiro CLI.
+> - **⚔️ Retro Pokémon Battle Arena (1v1 Mini-Game)**: Turn-based tactical duels with authentic 18-type effectiveness, signature 4-move sets, hybrid stat/ribbon scaling, smart AI, live combat terminal, and Battle Points (BP) rewards exchange.
 > - **🪪 Holographic Trainer Passport**: Custom Trainer ID (`#TR-XXXX`), customizable nickname, Pokédex buddy avatar selector, and career rank titles (`Novice` → `AI Grandmaster Champion`).
 > - **🟩 GitHub-Style Token Coding Heatmap**: 26-week retroactive pixel contribution grid with 5 token intensity levels, current/best streak trackers, active day tallies, and daily average volume.
-> - **📜 Trainer PokéJournal & Milestone Diary**: Auto-generated chronological timeline logging companion hatches, evolutions, graduations, berry feeding, and ribbon unlocks.
+> - **📜 Trainer PokéJournal & Milestone Diary**: Auto-generated chronological timeline logging companion hatches, evolutions, graduations, berry feeding, arena victories, and ribbon unlocks.
 > - **⚡ Mega Evolution & Gigantamax Overdrive**: Temporary Mega / G-Max transformation during Fast/Blazing burn sprints with 2× Coin Rush shop multipliers and Prismatic HUD.
-> - **🏅 Pokémon Ribbon & Achievement System**: 11 unique unlockable trainer ribbons & honors with an interactive Ribbon Case modal and Pokédex integration.
+> - **🏅 Pokémon Ribbon & Achievement System**: 12 unique unlockable trainer ribbons & honors (including the new *Arena Champion Ribbon*) with an interactive Ribbon Case modal and Pokédex integration.
 > - **🕹️ Desktop Pet 2.0**: Interactive petting animations (Happy Hop, Playful Wiggle, Floating Hearts), 15-minute Sleep & Wake cycle with floating `Zzz` bubbles, and Sitrus Berry golden sparkle aura.
 > - **🎒 PokéShop & Bag Item Lore**: Comprehensive descriptions and live effect tiles for Rare Candies, Nature Mints, Oran Berries, Sitrus Berries, and Shiny Charms.
 > - **Interactive Pokédex Detail Modal**: Click any discovered Pokémon to read its official game Pokédex lore, classification, height, weight, category, and earned ribbons.
-> - **337 passing unit tests**. See [CHANGELOG.md](CHANGELOG.md), [docs/architecture.md](docs/architecture.md), and [docs/roadmap.md](docs/roadmap.md).
+> - **342 passing unit tests**. See [CHANGELOG.md](CHANGELOG.md), [docs/architecture.md](docs/architecture.md), and [docs/roadmap.md](docs/roadmap.md).
 
 > [!IMPORTANT]
 > **Provider Testing & Verification Status**:
@@ -61,7 +62,15 @@ It monitors the AI coding tokens you burn across 10 tools (Claude Code, Codex, G
 - **Quick Action Items**: Use **Nature Mints** to reroll growth attributes, **Rare Candies** for instant progress, or **Oran & Sitrus Berries** to feed your companion directly from the Buddy card.
 - **Celebration Banners**: Interactive banners with sparkle animations celebrating evolutionary milestones and Hall of Fame graduations.
 
-### ⚡ 2. Mega Evolution & Gigantamax Overdrive
+### ⚔️ 2. Retro Pokémon Battle Arena (1v1 Mini-Game)
+- **Turn-Based Tactical Combat**: Send your active companion or any graduated Pokédex champion into quick 1v1 turn-based battles against wild rival Pokémon.
+- **Authentic 18-Type Matchup Engine**: Complete type chart calculating 2× Super Effective, 0.5× Resistances, and 0× Immunities across both single and dual elemental types.
+- **Signature 4-Move Sets**: Every species is automatically equipped with 4 tailored elemental moves (e.g. STAB elemental blast, recovery/buff status move, priority quick strike, coverage move) complete with PP limits and Physical/Special/Status mechanics.
+- **Hybrid Coding Stat Scaling**: Base combat stats scale with evolutionary stage, gain a permanent +5% power boost per earned Ribbon, and critical hit chances surge during Mega Overdrive.
+- **Battle Points (BP) Rewards & Shop**: Earn Battle Points (BP) and PokéCoins for victories to redeem in the exclusive BP Exchange Shop for Rare Candies, Mints, Berries, Shiny Charms, and Mythical Eggs.
+- **Classic Game Boy / GBA Stage**: Retro battle layout with animated Pokémon sprites, multi-tiered HP gauges, live combat feed terminal, and victory banners.
+
+### ⚡ 3. Mega Evolution & Gigantamax Overdrive
 - **Burst Surge Mode**: When your burn rate hits the 🔥 *On Fire!* or ⚡ *Fast Pace* tier (e.g., deep agentic loops or subagent storms), your companion temporarily Mega Evolves or Gigantamaxes!
 - **Dynamic Desktop HUD**: The floating pet widget ignites with glowing electric aura particle effects, a multi-color Prismatic progress ring, and custom Mega / G-Max sprite forms.
 - **2× Coin Rush Multiplier**: Earn 2× Token Coins in the PokéShop while Overdrive mode is active (toggleable in Preferences).

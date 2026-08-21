@@ -66,9 +66,78 @@
     avatarSpeciesId?: number | null;
     journal?: JournalEntry[];
     dailyHistory?: Record<string, number>;
+    bp?: number;
+    battleStats?: BattleStatsRecord;
+    activeBattle?: ActiveBattleState | null;
     state?: {
       usedSinceInstall?: number;
     };
+  }
+
+  interface BattleMove {
+    id: string;
+    name: string;
+    element: string;
+    category: "Physical" | "Special" | "Status";
+    power: number;
+    accuracy: number;
+    currentPp: number;
+    maxPp: number;
+    description: string;
+    effect?: string | null;
+  }
+
+  interface BattleFighter {
+    speciesId: number;
+    name: string;
+    isShiny: boolean;
+    level: number;
+    stage: number;
+    elementTypes: string[];
+    maxHp: number;
+    currentHp: number;
+    attack: number;
+    defense: number;
+    spAttack: number;
+    spDefense: number;
+    speed: number;
+    ribbonCount: number;
+    isOverdrive: boolean;
+    atkStage: number;
+    defStage: number;
+    moves: BattleMove[];
+  }
+
+  interface BattleLogEntry {
+    id: string;
+    text: string;
+    actor: "player" | "opponent" | "system";
+    damage?: number | null;
+    isCrit: boolean;
+    effectiveness: "super" | "not_very" | "immune" | "normal";
+    timestamp: number;
+  }
+
+  interface ActiveBattleState {
+    battleId: string;
+    turnCount: number;
+    player: BattleFighter;
+    opponent: BattleFighter;
+    isPlayerTurn: boolean;
+    battlePhase: "selecting" | "resolving" | "won" | "lost" | "fled";
+    battleLog: BattleLogEntry[];
+    rewardBp: number;
+    rewardCoins: number;
+    won?: boolean | null;
+  }
+
+  interface BattleStatsRecord {
+    wins: number;
+    losses: number;
+    winStreak: number;
+    bestStreak: number;
+    totalBattles: number;
+    totalBpEarned: number;
   }
 
   interface ProviderView {
@@ -119,7 +188,7 @@
     usage: UsageView;
   }
 
-  type Tab = "buddy" | "usage" | "shop" | "pokedex" | "trainer";
+  type Tab = "buddy" | "usage" | "shop" | "pokedex" | "trainer" | "arena";
   type Theme = "midnight" | "oled" | "cyberpunk" | "retro";
 
   let snap = $state<Snapshot | null>(null);
@@ -182,6 +251,63 @@
       console.error("Failed to set trainer avatar:", e);
     } finally {
       showAvatarPickerModal = false;
+    }
+  }
+
+  // ⚔️ Battle Arena State & Actions
+  let selectedFighterSpeciesId = $state<number | null>(null);
+  let isExecutingMove = $state(false);
+  let arenaNotice = $state<string | null>(null);
+
+  async function startArenaBattle(speciesId?: number | null) {
+    try {
+      const res = await invoke<Snapshot>("start_battle", { speciesId: speciesId ?? selectedFighterSpeciesId });
+      if (res) snap = res;
+    } catch (e) {
+      console.error("Failed to start battle:", e);
+    }
+  }
+
+  async function sendBattleMove(moveIdx: number) {
+    if (isExecutingMove) return;
+    isExecutingMove = true;
+    try {
+      const res = await invoke<Snapshot>("execute_battle_move", { moveIndex: moveIdx });
+      if (res) snap = res;
+    } catch (e) {
+      console.error("Failed to execute move:", e);
+    } finally {
+      isExecutingMove = false;
+    }
+  }
+
+  async function fleeArenaBattle() {
+    try {
+      const res = await invoke<Snapshot>("flee_battle");
+      if (res) snap = res;
+    } catch (e) {
+      console.error("Failed to flee battle:", e);
+    }
+  }
+
+  async function clearArenaBattle() {
+    try {
+      const res = await invoke<Snapshot>("clear_battle");
+      if (res) snap = res;
+    } catch (e) {
+      console.error("Failed to clear battle:", e);
+    }
+  }
+
+  async function buyBpShopItem(itemId: string) {
+    try {
+      const res = await invoke<Snapshot>("buy_bp_item", { itemId });
+      if (res) snap = res;
+      arenaNotice = "Item acquired successfully!";
+      setTimeout(() => { arenaNotice = null; }, 2500);
+    } catch (e: any) {
+      arenaNotice = typeof e === "string" ? e : "Not enough Battle Points!";
+      setTimeout(() => { arenaNotice = null; }, 3000);
     }
   }
 
@@ -831,6 +957,7 @@
     { id: "shop", label: "Shop & Bag" },
     { id: "pokedex", label: "Pokédex" },
     { id: "trainer", label: "Passport" },
+    { id: "arena", label: "Arena" },
   ];
 </script>
 
@@ -962,12 +1089,16 @@
               <path d="M15 12h4"></path>
               <path d="M5 18c0-2 2-3.5 4-3.5s4 1.5 4 3.5"></path>
             </svg>
+          {:else if tab.id === "arena"}
+            <span style="font-size: 13px;">⚔️</span>
           {/if}
           <span>{tab.label}</span>
           {#if tab.id === "pokedex" && snap && snap.companion.dex.length > 0}
             <span class="tab-badge">{snap.companion.dex.length}</span>
           {:else if tab.id === "trainer" && snap && (snap.companion.journal ?? []).length > 0}
             <span class="tab-badge">{(snap.companion.journal ?? []).length}</span>
+          {:else if tab.id === "arena" && snap && (snap.companion.bp ?? 0) > 0}
+            <span class="tab-badge bp-badge">{snap.companion.bp} BP</span>
           {/if}
         </button>
       {/each}
@@ -1063,7 +1194,7 @@
           <div class="about-box">
             <div class="about-header">
               <span>PokéTokenBar</span>
-              <span class="version-tag">v0.3.7</span>
+              <span class="version-tag">v0.4.0</span>
             </div>
             <p class="about-sub">Pokémon companion for AI coding tokens on Windows & Linux.</p>
           </div>
@@ -1902,6 +2033,445 @@
                 {/if}
               </div>
             </div>
+
+          </div>
+        {/if}
+
+        {#if currentTab === "arena"}
+          {@const b = c.activeBattle}
+          {@const stats = c.battleStats ?? { wins: 0, losses: 0, winStreak: 0, bestStreak: 0, totalBattles: 0, totalBpEarned: 0 }}
+          {@const activeSpeciesId = c.currentSpeciesId ?? (c.dex[0]?.id ?? 25)}
+          {@const chosenFighterId = selectedFighterSpeciesId ?? activeSpeciesId}
+          {@const chosenDexMon = c.dex.find(d => d.id === chosenFighterId)}
+          {@const fighterName = chosenDexMon?.name ?? (c.displayName || "Pokémon")}
+          {@const fighterTypes = getTypes(chosenFighterId)}
+          {@const fighterIsShiny = chosenDexMon ? chosenDexMon.isShiny : c.isShiny}
+
+          <div class="tab-pane arena-pane">
+
+            {#if b}
+              <!-- ⚔️ Active Turn-Based 1v1 Battle View -->
+              <div class="battle-stage-card">
+                <div class="battle-arena-glow"></div>
+
+                <!-- Battle Top Header -->
+                <div class="battle-stage-header">
+                  <div class="battle-header-left">
+                    <span class="battle-live-indicator">LIVE</span>
+                    <span class="turn-counter">Turn {b.turnCount}</span>
+                  </div>
+                  <button class="battle-flee-top-btn" onclick={fleeArenaBattle} title="Forfeit / Run from battle">
+                    🏃 Forfeit
+                  </button>
+                </div>
+
+                <!-- Battle Arena Field (Opponent Top Right, Player Bottom Left) -->
+                <div class="battle-field">
+                  
+                  <!-- Opponent Platform (Top Right) -->
+                  <div class="combatant-pod opponent-pod" class:combatant-fainted={b.opponent.currentHp === 0}>
+                    <div class="combatant-hud">
+                      <div class="hud-name-row">
+                        <span class="combatant-name">{b.opponent.name}</span>
+                        {#if b.opponent.isShiny}<span class="shiny-tag">✨</span>{/if}
+                        <span class="combatant-level">Lv. {b.opponent.level}</span>
+                      </div>
+                      <div class="hud-hp-bar-outer">
+                        <div
+                          class="hud-hp-bar-fill"
+                          class:hp-healthy={b.opponent.currentHp / b.opponent.maxHp > 0.5}
+                          class:hp-caution={b.opponent.currentHp / b.opponent.maxHp <= 0.5 && b.opponent.currentHp / b.opponent.maxHp > 0.2}
+                          class:hp-danger={b.opponent.currentHp / b.opponent.maxHp <= 0.2}
+                          style="width: {Math.max(0, Math.min(100, (b.opponent.currentHp / b.opponent.maxHp) * 100))}%"
+                        ></div>
+                      </div>
+                      <div class="hud-hp-text-row">
+                        <span class="hp-num-label">HP</span>
+                        <span class="hp-num-values">{b.opponent.currentHp} / {b.opponent.maxHp}</span>
+                      </div>
+                    </div>
+
+                    <div class="sprite-platform opp-platform">
+                      <img
+                        class="arena-sprite opponent-sprite"
+                        src={spriteUrl(b.opponent.speciesId, b.opponent.isShiny, true)}
+                        alt={b.opponent.name}
+                        onerror={(e) => fallbackStaticSprite(e, b.opponent.speciesId, b.opponent.isShiny)}
+                      />
+                      <div class="platform-shadow"></div>
+                    </div>
+                  </div>
+
+                  <!-- Player Platform (Bottom Left) -->
+                  <div class="combatant-pod player-pod" class:combatant-fainted={b.player.currentHp === 0}>
+                    <div class="sprite-platform player-platform">
+                      <img
+                        class="arena-sprite player-sprite"
+                        src={spriteUrl(b.player.speciesId, b.player.isShiny, true)}
+                        alt={b.player.name}
+                        onerror={(e) => fallbackStaticSprite(e, b.player.speciesId, b.player.isShiny)}
+                      />
+                      <div class="platform-shadow"></div>
+                      {#if b.player.isOverdrive}
+                        <div class="player-aura-sparkles">⚡ MEGA OVERDRIVE</div>
+                      {/if}
+                    </div>
+
+                    <div class="combatant-hud player-hud">
+                      <div class="hud-name-row">
+                        <span class="combatant-name">{b.player.name}</span>
+                        {#if b.player.isShiny}<span class="shiny-tag">✨</span>{/if}
+                        <span class="combatant-level">Lv. {b.player.level}</span>
+                      </div>
+                      <div class="hud-hp-bar-outer">
+                        <div
+                          class="hud-hp-bar-fill"
+                          class:hp-healthy={b.player.currentHp / b.player.maxHp > 0.5}
+                          class:hp-caution={b.player.currentHp / b.player.maxHp <= 0.5 && b.player.currentHp / b.player.maxHp > 0.2}
+                          class:hp-danger={b.player.currentHp / b.player.maxHp <= 0.2}
+                          style="width: {Math.max(0, Math.min(100, (b.player.currentHp / b.player.maxHp) * 100))}%"
+                        ></div>
+                      </div>
+                      <div class="hud-hp-text-row">
+                        <span class="hp-num-label">HP</span>
+                        <span class="hp-num-values">{b.player.currentHp} / {b.player.maxHp}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                <!-- Battle Controls & Moves Dashboard -->
+                <div class="battle-dashboard">
+                  {#if b.battlePhase === "selecting"}
+                    <div class="moves-header">
+                      <span class="moves-title">What will {b.player.name} do?</span>
+                    </div>
+
+                    <div class="moves-grid">
+                      {#each b.player.moves as m, idx}
+                        {@const moveTypeInfo = getTypes(1).list.find(t => t.name.toLowerCase() === m.element.toLowerCase())}
+                        <button
+                          type="button"
+                          class="move-btn"
+                          disabled={isExecutingMove || m.currentPp === 0}
+                          onclick={() => sendBattleMove(idx)}
+                        >
+                          <div class="move-btn-top">
+                            <span class="move-name">{m.name}</span>
+                            <span class="move-type-pill" style="--move-type-col: {moveTypeInfo ? moveTypeInfo.text : '#fff'};">
+                              {m.element}
+                            </span>
+                          </div>
+                          <div class="move-btn-bottom">
+                            <span class="move-cat-tag">
+                              {m.category === 'Physical' ? '⚔️' : m.category === 'Special' ? '🔮' : '✨'} {m.category}
+                            </span>
+                            <span class="move-pp-text">PP {m.currentPp}/{m.maxPp}</span>
+                            {#if m.power > 0}
+                              <span class="move-power-text">{m.power} PWR</span>
+                            {/if}
+                          </div>
+                        </button>
+                      {/each}
+                    </div>
+
+                  {:else if b.battlePhase === "won"}
+                    <div class="battle-result-card victory-card">
+                      <div class="result-icon-burst">🎉</div>
+                      <h3 class="result-title victory-title">VICTORY!</h3>
+                      <p class="result-desc">You defeated {b.opponent.name} and claimed glorious arena spoils!</p>
+                      
+                      <div class="rewards-pills-row">
+                        <span class="reward-pill bp-pill">🏆 +{b.rewardBp} BP</span>
+                        <span class="reward-pill coin-pill">🪙 +{b.rewardCoins} Coins</span>
+                        <span class="reward-pill ribbon-pill">🏅 Arena Champion</span>
+                      </div>
+
+                      <div class="result-actions-row">
+                        <button class="result-action-btn next-battle-btn" onclick={() => startArenaBattle()}>
+                          ⚔️ Battle Next Opponent ➔
+                        </button>
+                        <button class="result-action-btn leave-arena-btn" onclick={clearArenaBattle}>
+                          Back to Lobby
+                        </button>
+                      </div>
+                    </div>
+
+                  {:else if b.battlePhase === "lost"}
+                    <div class="battle-result-card defeat-card">
+                      <div class="result-icon-burst">💔</div>
+                      <h3 class="result-title defeat-title">DEFEATED</h3>
+                      <p class="result-desc">{b.player.name} fainted. You fought hard and gained battle experience!</p>
+                      
+                      <div class="rewards-pills-row">
+                        <span class="reward-pill bp-pill">🏆 +{b.rewardBp} BP Consolation</span>
+                        <span class="reward-pill coin-pill">🪙 +{b.rewardCoins} Coins</span>
+                      </div>
+
+                      <div class="result-actions-row">
+                        <button class="result-action-btn retry-battle-btn" onclick={() => startArenaBattle()}>
+                          🔄 Rematch / Try Again
+                        </button>
+                        <button class="result-action-btn leave-arena-btn" onclick={clearArenaBattle}>
+                          Back to Lobby
+                        </button>
+                      </div>
+                    </div>
+                  {/if}
+                </div>
+
+                <!-- Battle Live Log Terminal -->
+                <div class="battle-log-card">
+                  <div class="battle-log-header">
+                    <span class="log-title">📜 Combat Terminal</span>
+                  </div>
+                  <div class="battle-log-feed pk-scroll">
+                    {#each b.battleLog as logItem (logItem.id)}
+                      <div class="log-line actor-{logItem.actor}">
+                        <span class="log-bullet">›</span>
+                        <span class="log-text">{logItem.text}</span>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+
+              </div>
+
+            {:else}
+              <!-- 🏆 Arena Lobby & Roster Preparation View -->
+              <div class="arena-lobby-card">
+                <div class="arena-hero-banner">
+                  <div class="arena-hero-icon">⚔️</div>
+                  <div class="arena-hero-texts">
+                    <h2 class="arena-heading">Pokémon Battle Arena</h2>
+                    <p class="arena-subheading">Turn-based tactical 1v1 duels powered by your coding tokens</p>
+                  </div>
+                  <div class="arena-bp-pill">
+                    <span class="bp-icon">🏆</span>
+                    <span class="bp-amount">{c.bp ?? 0} BP</span>
+                  </div>
+                </div>
+
+                {#if arenaNotice}
+                  <div class="arena-notice-banner">
+                    <span>✨ {arenaNotice}</span>
+                  </div>
+                {/if}
+
+                <!-- Selected Combatant Preparation Card -->
+                <div class="fighter-prep-card">
+                  <div class="prep-header">
+                    <span class="prep-title">CHOOSE YOUR CHAMPION</span>
+                    <span class="prep-stage-tag">Stage {chosenDexMon ? 3 : getStageInfo(c.stageText, c.isFinalStage).stage}/3</span>
+                  </div>
+
+                  <div class="prep-body">
+                    <div class="prep-sprite-box">
+                      <img
+                        class="prep-sprite"
+                        src={spriteUrl(chosenFighterId, fighterIsShiny, true)}
+                        alt={fighterName}
+                        onerror={(e) => fallbackStaticSprite(e, chosenFighterId, fighterIsShiny)}
+                      />
+                    </div>
+
+                    <div class="prep-info-col">
+                      <div class="prep-name-row">
+                        <span class="prep-fighter-name">{fighterName}</span>
+                        {#if fighterIsShiny}<span class="shiny-tag">✨</span>{/if}
+                      </div>
+
+                      <div class="prep-types-row">
+                        {#each fighterTypes.list as t}
+                          <span class="prep-type-pill" style="color: {t.text}; background: {t.bg}; border: {t.border};">
+                            {t.name}
+                          </span>
+                        {/each}
+                        {#if (chosenDexMon?.ribbons ?? c.ribbons ?? []).length > 0}
+                          <span class="prep-ribbon-count">
+                            🏅 {(chosenDexMon?.ribbons ?? c.ribbons ?? []).length} Ribbons (+{(chosenDexMon?.ribbons ?? c.ribbons ?? []).length * 5}% Power)
+                          </span>
+                        {/if}
+                      </div>
+
+                      <!-- Fighter Select Dropdown / Selector -->
+                      <div class="fighter-select-dropdown-box">
+                        <label for="fighter-select" class="dropdown-lbl">Active Roster:</label>
+                        <select
+                          id="fighter-select"
+                          class="fighter-select-dropdown"
+                          bind:value={selectedFighterSpeciesId}
+                        >
+                          {#if c.hasActive && c.currentSpeciesId}
+                            <option value={c.currentSpeciesId}>🌟 Active Buddy: {c.displayName}</option>
+                          {/if}
+                          {#each c.dex as d}
+                            {#if !c.currentSpeciesId || d.id !== c.currentSpeciesId}
+                              <option value={d.id}>{d.name} {d.isShiny ? '✨' : ''} (Pokédex)</option>
+                            {/if}
+                          {/each}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Action Matchmaking Button -->
+                  <button
+                    type="button"
+                    class="start-battle-main-btn"
+                    onclick={() => startArenaBattle()}
+                  >
+                    <span class="btn-sword-icon">⚔️</span>
+                    <span>ENTER BATTLE ARENA</span>
+                  </button>
+                </div>
+
+                <!-- Arena Career Stats Grid -->
+                <div class="arena-stats-grid">
+                  <div class="arena-stat-box">
+                    <span class="astat-val">{stats.wins}</span>
+                    <span class="astat-lbl">VICTORIES</span>
+                  </div>
+                  <div class="arena-stat-box">
+                    <span class="astat-val">{stats.losses}</span>
+                    <span class="astat-lbl">DEFEATS</span>
+                  </div>
+                  <div class="arena-stat-box">
+                    <span class="astat-val">{stats.totalBattles > 0 ? Math.round((stats.wins / stats.totalBattles) * 100) : 0}%</span>
+                    <span class="astat-lbl">WIN RATE</span>
+                  </div>
+                  <div class="arena-stat-box highlight-streak">
+                    <span class="astat-val">🔥 {stats.winStreak}</span>
+                    <span class="astat-lbl">STREAK</span>
+                  </div>
+                  <div class="arena-stat-box">
+                    <span class="astat-val">🏆 {stats.bestStreak}</span>
+                    <span class="astat-lbl">BEST STREAK</span>
+                  </div>
+                  <div class="arena-stat-box">
+                    <span class="astat-val">👑 {stats.totalBpEarned}</span>
+                    <span class="astat-lbl">LIFETIME BP</span>
+                  </div>
+                </div>
+
+                <!-- Battle Points (BP) Rewards Exchange -->
+                <div class="bp-exchange-section">
+                  <div class="bpx-header">
+                    <span class="bpx-title">🏆 Battle Points (BP) Exchange Shelf</span>
+                    <span class="bpx-sub">Redeem arena trophies for premium rare items</span>
+                  </div>
+
+                  <div class="bpx-grid">
+                    <div class="bpx-card">
+                      <div class="bpx-icon">🍬</div>
+                      <div class="bpx-info">
+                        <span class="bpx-name">Rare Candy</span>
+                        <span class="bpx-desc">+10M Evolutionary XP</span>
+                      </div>
+                      <button
+                        class="bpx-buy-btn"
+                        disabled={(c.bp ?? 0) < 20}
+                        onclick={() => buyBpShopItem("rareCandy")}
+                      >
+                        20 BP
+                      </button>
+                    </div>
+
+                    <div class="bpx-card">
+                      <div class="bpx-icon">🍃</div>
+                      <div class="bpx-info">
+                        <span class="bpx-name">Nature Mint</span>
+                        <span class="bpx-desc">Re-roll nature buffs</span>
+                      </div>
+                      <button
+                        class="bpx-buy-btn"
+                        disabled={(c.bp ?? 0) < 15}
+                        onclick={() => buyBpShopItem("mint")}
+                      >
+                        15 BP
+                      </button>
+                    </div>
+
+                    <div class="bpx-card">
+                      <div class="bpx-icon">🍊</div>
+                      <div class="bpx-info">
+                        <span class="bpx-name">Oran Berry</span>
+                        <span class="bpx-desc">+15M XP treat</span>
+                      </div>
+                      <button
+                        class="bpx-buy-btn"
+                        disabled={(c.bp ?? 0) < 15}
+                        onclick={() => buyBpShopItem("oranBerry")}
+                      >
+                        15 BP
+                      </button>
+                    </div>
+
+                    <div class="bpx-card">
+                      <div class="bpx-icon">🌟</div>
+                      <div class="bpx-info">
+                        <span class="bpx-name">Sitrus Berry</span>
+                        <span class="bpx-desc">+50M XP + Golden Sparkle Aura</span>
+                      </div>
+                      <button
+                        class="bpx-buy-btn"
+                        disabled={(c.bp ?? 0) < 35}
+                        onclick={() => buyBpShopItem("sitrusBerry")}
+                      >
+                        35 BP
+                      </button>
+                    </div>
+
+                    <div class="bpx-card">
+                      <div class="bpx-icon">💫</div>
+                      <div class="bpx-info">
+                        <span class="bpx-name">Shiny Charm</span>
+                        <span class="bpx-desc">Permanent 1/48 shiny rate</span>
+                      </div>
+                      <button
+                        class="bpx-buy-btn"
+                        disabled={(c.bp ?? 0) < 100}
+                        onclick={() => buyBpShopItem("shinyCharm")}
+                      >
+                        100 BP
+                      </button>
+                    </div>
+
+                    <div class="bpx-card">
+                      <div class="bpx-icon">🔮</div>
+                      <div class="bpx-info">
+                        <span class="bpx-name">Epic Egg</span>
+                        <span class="bpx-desc">Guaranteed 3-stage powerhouse</span>
+                      </div>
+                      <button
+                        class="bpx-buy-btn"
+                        disabled={(c.bp ?? 0) < 50}
+                        onclick={() => buyBpShopItem("epicEgg")}
+                      >
+                        50 BP
+                      </button>
+                    </div>
+
+                    <div class="bpx-card">
+                      <div class="bpx-icon">👑</div>
+                      <div class="bpx-info">
+                        <span class="bpx-name">Legendary Egg</span>
+                        <span class="bpx-desc">Ultra-rare mythical creature</span>
+                      </div>
+                      <button
+                        class="bpx-buy-btn"
+                        disabled={(c.bp ?? 0) < 120}
+                        onclick={() => buyBpShopItem("legendaryEgg")}
+                      >
+                        120 BP
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            {/if}
 
           </div>
         {/if}
@@ -4928,4 +5498,792 @@
     color: #F1F5F9;
     text-align: center;
   }
+
+  /* ==========================================
+     ⚔️ BATTLE ARENA (v0.4.0)
+     ========================================== */
+  .arena-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .tab-badge.bp-badge {
+    background: linear-gradient(135deg, #F59E0B, #EF4444);
+    color: #FFF;
+    font-weight: 800;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+  }
+
+  /* 🏆 Arena Lobby & Hero Banner */
+  .arena-lobby-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .arena-hero-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(245, 158, 11, 0.12) 100%);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  }
+  .arena-hero-icon {
+    font-size: 28px;
+    filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.5));
+  }
+  .arena-hero-texts {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+  }
+  .arena-heading {
+    font-size: 15px;
+    font-weight: 800;
+    color: #F8FAFC;
+    margin: 0;
+    letter-spacing: -0.2px;
+  }
+  .arena-subheading {
+    font-size: 11px;
+    color: #CBD5E1;
+    margin: 0;
+  }
+  .arena-bp-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.2);
+  }
+  .arena-bp-pill .bp-icon { font-size: 14px; }
+  .arena-bp-pill .bp-amount {
+    font-size: 12px;
+    font-weight: 800;
+    color: #FCD34D;
+  }
+
+  .arena-notice-banner {
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(59, 130, 246, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: #93C5FD;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  /* 🛡️ Fighter Preparation Card */
+  .fighter-prep-card {
+    padding: 16px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .prep-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .prep-title {
+    font-size: 10.5px;
+    font-weight: 800;
+    color: #94A3B8;
+    letter-spacing: 0.8px;
+  }
+  .prep-stage-tag {
+    font-size: 10px;
+    font-weight: 700;
+    color: #38BDF8;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+  }
+
+  .prep-body {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .prep-sprite-box {
+    width: 72px;
+    height: 72px;
+    border-radius: 14px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.08) 0%, rgba(0, 0, 0, 0.3) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .prep-sprite {
+    width: 60px;
+    height: 60px;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+  }
+  .prep-info-col {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+  }
+  .prep-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .prep-fighter-name {
+    font-size: 14px;
+    font-weight: 800;
+    color: #F8FAFC;
+  }
+  .prep-types-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .prep-type-pill {
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 6px;
+  }
+  .prep-ribbon-count {
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #FCD34D;
+  }
+
+  .fighter-select-dropdown-box {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .dropdown-lbl {
+    font-size: 9.5px;
+    color: #8B93A7;
+    font-weight: 700;
+  }
+  .fighter-select-dropdown {
+    width: 100%;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #F1F5F9;
+    font-size: 11px;
+    font-weight: 600;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .start-battle-main-btn {
+    width: 100%;
+    padding: 12px 18px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #EF4444 0%, #DC2626 50%, #B91C1C 100%);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #FFF;
+    font-size: 12.5px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
+    transition: all 0.2s ease;
+  }
+  .start-battle-main-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(239, 68, 68, 0.6);
+    filter: brightness(1.1);
+  }
+
+  /* 📊 Arena Career Stats Grid */
+  .arena-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .arena-stat-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    gap: 2px;
+  }
+  .arena-stat-box.highlight-streak {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.25);
+  }
+  .astat-val {
+    font-size: 14px;
+    font-weight: 800;
+    color: #F8FAFC;
+  }
+  .astat-lbl {
+    font-size: 9px;
+    font-weight: 700;
+    color: #8B93A7;
+    letter-spacing: 0.5px;
+  }
+
+  /* 🏆 BP Rewards Exchange Shelf */
+  .bp-exchange-section {
+    padding: 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .bpx-header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .bpx-title {
+    font-size: 12px;
+    font-weight: 800;
+    color: #F8FAFC;
+  }
+  .bpx-sub {
+    font-size: 10px;
+    color: #8B93A7;
+  }
+  .bpx-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .bpx-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: all 0.2s ease;
+  }
+  .bpx-card:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  .bpx-icon { font-size: 18px; flex-shrink: 0; }
+  .bpx-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+  .bpx-name {
+    font-size: 11.5px;
+    font-weight: 800;
+    color: #F1F5F9;
+  }
+  .bpx-desc {
+    font-size: 9.5px;
+    color: #94A3B8;
+  }
+  .bpx-buy-btn {
+    padding: 5px 12px;
+    border-radius: 8px;
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #FCD34D;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+  .bpx-buy-btn:hover:not(:disabled) {
+    background: #F59E0B;
+    color: #1E1B4B;
+    transform: scale(1.04);
+  }
+  .bpx-buy-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ⚔️ RETRO BATTLE STAGE CANVAS */
+  .battle-stage-card {
+    position: relative;
+    padding: 14px;
+    border-radius: 16px;
+    background: radial-gradient(ellipse at 50% 30%, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.98) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow: hidden;
+  }
+
+  .battle-arena-glow {
+    position: absolute;
+    top: -50px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 250px;
+    height: 120px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(239, 68, 68, 0.2) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .battle-stage-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 2;
+  }
+  .battle-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .battle-live-indicator {
+    font-size: 9px;
+    font-weight: 900;
+    color: #EF4444;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    letter-spacing: 0.5px;
+    animation: livePulse 1.5s infinite ease-in-out;
+  }
+  @keyframes livePulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  .turn-counter {
+    font-size: 11px;
+    font-weight: 800;
+    color: #CBD5E1;
+  }
+  .battle-flee-top-btn {
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94A3B8;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .battle-flee-top-btn:hover {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: #EF4444;
+    color: #FCA5A5;
+  }
+
+  /* Battle Field Pods */
+  .battle-field {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    position: relative;
+    min-height: 200px;
+    justify-content: space-between;
+    padding: 8px 0;
+  }
+
+  .combatant-pod {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    transition: opacity 0.3s ease;
+  }
+  .combatant-pod.combatant-fainted {
+    opacity: 0.3;
+    filter: grayscale(1);
+  }
+
+  .opponent-pod {
+    flex-direction: row;
+  }
+  .player-pod {
+    flex-direction: row;
+  }
+
+  /* Retro HUD */
+  .combatant-hud {
+    width: 170px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+  .hud-name-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .combatant-name {
+    font-size: 11.5px;
+    font-weight: 800;
+    color: #F8FAFC;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100px;
+  }
+  .combatant-level {
+    font-size: 10px;
+    font-weight: 800;
+    color: #FCD34D;
+  }
+
+  .hud-hp-bar-outer {
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+    position: relative;
+  }
+  .hud-hp-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.4s ease-out, background-color 0.4s ease;
+  }
+  .hud-hp-bar-fill.hp-healthy {
+    background: linear-gradient(90deg, #10B981, #34D399);
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+  }
+  .hud-hp-bar-fill.hp-caution {
+    background: linear-gradient(90deg, #F59E0B, #FBBF24);
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+  }
+  .hud-hp-bar-fill.hp-danger {
+    background: linear-gradient(90deg, #EF4444, #F87171);
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+  }
+
+  .hud-hp-text-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .hp-num-label {
+    font-size: 8.5px;
+    font-weight: 900;
+    color: #FCD34D;
+    letter-spacing: 0.5px;
+  }
+  .hp-num-values {
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #E2E8F0;
+  }
+
+  /* Sprite Platform */
+  .sprite-platform {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100px;
+    height: 100px;
+  }
+  .arena-sprite {
+    width: 84px;
+    height: 84px;
+    object-fit: contain;
+    z-index: 2;
+    filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.6));
+    animation: readyBounce 2.5s ease-in-out infinite alternate;
+  }
+  @keyframes readyBounce {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(-4px); }
+  }
+
+  .platform-shadow {
+    position: absolute;
+    bottom: 6px;
+    width: 70px;
+    height: 14px;
+    border-radius: 50%;
+    background: radial-gradient(ellipse, rgba(0, 0, 0, 0.6) 0%, transparent 80%);
+    z-index: 1;
+  }
+
+  .player-aura-sparkles {
+    position: absolute;
+    top: -8px;
+    font-size: 9px;
+    font-weight: 900;
+    color: #FCD34D;
+    text-shadow: 0 0 6px rgba(252, 211, 77, 0.8);
+    animation: livePulse 1s infinite alternate;
+  }
+
+  /* 🎮 Battle Dashboard & Moves Grid */
+  .battle-dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .moves-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .moves-title {
+    font-size: 11px;
+    font-weight: 800;
+    color: #CBD5E1;
+  }
+
+  .moves-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .move-btn {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s ease;
+  }
+  .move-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-2px);
+  }
+  .move-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .move-btn-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .move-name {
+    font-size: 11.5px;
+    font-weight: 800;
+    color: #F8FAFC;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .move-type-pill {
+    font-size: 8.5px;
+    font-weight: 800;
+    color: var(--move-type-col, #FFF);
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .move-btn-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+  }
+  .move-cat-tag {
+    font-size: 9px;
+    font-weight: 600;
+    color: #94A3B8;
+  }
+  .move-pp-text {
+    font-size: 9px;
+    font-weight: 700;
+    color: #FCD34D;
+  }
+  .move-power-text {
+    font-size: 9px;
+    font-weight: 700;
+    color: #38BDF8;
+  }
+
+  /* 🎉 Victory & Defeat Result Overlay Cards */
+  .battle-result-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 20px 16px;
+    border-radius: 14px;
+    gap: 8px;
+    animation: resultPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  @keyframes resultPop {
+    0% { transform: scale(0.9); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .battle-result-card.victory-card {
+    background: radial-gradient(circle at 50% 30%, rgba(245, 158, 11, 0.2) 0%, rgba(16, 185, 129, 0.15) 100%);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    box-shadow: 0 8px 24px rgba(245, 158, 11, 0.2);
+  }
+  .battle-result-card.defeat-card {
+    background: radial-gradient(circle at 50% 30%, rgba(239, 68, 68, 0.2) 0%, rgba(15, 23, 42, 0.6) 100%);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    box-shadow: 0 8px 24px rgba(239, 68, 68, 0.2);
+  }
+
+  .result-icon-burst { font-size: 32px; }
+  .result-title {
+    font-size: 16px;
+    font-weight: 900;
+    letter-spacing: 0.5px;
+    margin: 0;
+  }
+  .victory-title { color: #FCD34D; }
+  .defeat-title { color: #F87171; }
+  .result-desc {
+    font-size: 11px;
+    color: #CBD5E1;
+    margin: 0;
+    max-width: 280px;
+  }
+
+  .rewards-pills-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .reward-pill {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 800;
+  }
+  .reward-pill.bp-pill {
+    background: rgba(245, 158, 11, 0.2);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    color: #FCD34D;
+  }
+  .reward-pill.coin-pill {
+    background: rgba(56, 189, 248, 0.2);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    color: #38BDF8;
+  }
+  .reward-pill.ribbon-pill {
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #FCA5A5;
+  }
+
+  .result-actions-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    width: 100%;
+  }
+  .result-action-btn {
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 11.5px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .next-battle-btn, .retry-battle-btn {
+    flex: 1;
+    background: linear-gradient(135deg, #EF4444, #DC2626);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #FFF;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+  }
+  .leave-arena-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #E2E8F0;
+  }
+
+  /* 📜 Live Battle Log Terminal */
+  .battle-log-card {
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .battle-log-header {
+    display: flex;
+    align-items: center;
+  }
+  .log-title {
+    font-size: 9.5px;
+    font-weight: 800;
+    color: #8B93A7;
+    letter-spacing: 0.5px;
+  }
+  .battle-log-feed {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 110px;
+    overflow-y: auto;
+    font-family: monospace;
+    padding-right: 4px;
+  }
+  .log-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: 10px;
+    line-height: 1.35;
+  }
+  .log-line.actor-player { color: #38BDF8; }
+  .log-line.actor-opponent { color: #F87171; }
+  .log-line.actor-system { color: #FCD34D; font-weight: 700; }
+  .log-bullet { opacity: 0.6; flex-shrink: 0; }
+  .log-text { word-break: break-word; }
 </style>

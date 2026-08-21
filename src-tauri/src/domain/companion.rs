@@ -1082,6 +1082,11 @@ pub struct CompanionState {
     pub avatar_species_id: Option<i64>,
     pub journal: Vec<JournalEntry>,
     pub daily_history: HashMap<String, i64>,
+    // Battle Arena v0.4.0
+    pub bp: u32,
+    pub battle_stats: crate::domain::battle::BattleStatsRecord,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_battle: Option<crate::domain::battle::ActiveBattleState>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -1116,6 +1121,9 @@ impl Default for CompanionState {
             avatar_species_id: None,
             journal: Vec::new(),
             daily_history: HashMap::new(),
+            bp: 0,
+            battle_stats: crate::domain::battle::BattleStatsRecord::default(),
+            active_battle: None,
         }
     }
 }
@@ -1172,6 +1180,17 @@ impl<'de> Deserialize<'de> for CompanionState {
         let trainer_id = get_opt_string(m, "trainerId").unwrap_or_else(generate_default_trainer_id);
         let avatar_species_id = get_opt_i64(m, "avatarSpeciesId");
         let daily_history = get_string_i64_map(m, "dailyHistory");
+        let bp = get_opt_i64(m, "bp").unwrap_or(0) as u32;
+        let battle_stats = match m.get("battleStats") {
+            Some(item) => {
+                crate::domain::battle::BattleStatsRecord::deserialize(item).unwrap_or_default()
+            }
+            None => crate::domain::battle::BattleStatsRecord::default(),
+        };
+        let active_battle = match m.get("activeBattle") {
+            Some(item) => crate::domain::battle::ActiveBattleState::deserialize(item).ok(),
+            None => None,
+        };
 
         Ok(Self {
             install_baseline_set: get_bool(m, "installBaselineSet"),
@@ -1194,6 +1213,9 @@ impl<'de> Deserialize<'de> for CompanionState {
             avatar_species_id,
             journal,
             daily_history,
+            bp,
+            battle_stats,
+            active_battle,
         })
     }
 }

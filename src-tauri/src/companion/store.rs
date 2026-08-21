@@ -895,6 +895,740 @@ impl CompanionStore {
         r
     }
 
+    // ==========================================
+    // ⚔️ Battle Arena Methods (v0.4.0)
+    // ==========================================
+
+    pub fn start_battle(&mut self, species_id: Option<i64>) -> Result<(), String> {
+        let (fighter_id, fighter_name, is_shiny, stage, ribbons) = if let Some(req_id) = species_id
+        {
+            if let Some(active) = self
+                .state
+                .active
+                .as_ref()
+                .filter(|a| a.current_id() == req_id)
+            {
+                let stage = (active.stage_index as u32) + 1;
+                let name = self.display_name();
+                (
+                    active.current_id(),
+                    name,
+                    active.is_shiny,
+                    stage,
+                    active.ribbons.clone(),
+                )
+            } else if let Some(dex_entry) = self.state.dex.iter().find(|d| {
+                d.final_id == req_id || d.base_id == req_id || d.chain_order.contains(&req_id)
+            }) {
+                let stage = dex_entry
+                    .chain_order
+                    .iter()
+                    .position(|&x| x == req_id)
+                    .map(|idx| (idx as u32) + 1)
+                    .unwrap_or(3);
+                let name = dex_entry
+                    .names
+                    .as_ref()
+                    .and_then(|nm| nm.get(&req_id))
+                    .and_then(|langs| self.state.language.resolve_name(langs))
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("Pokémon #{}", req_id));
+                (
+                    req_id,
+                    name,
+                    dex_entry.is_shiny,
+                    stage,
+                    dex_entry.ribbons.clone(),
+                )
+            } else {
+                (req_id, "Pokémon".to_string(), false, 2, Vec::new())
+            }
+        } else if let Some(active) = self.state.active.as_ref() {
+            let stage = (active.stage_index as u32) + 1;
+            let name = self.display_name();
+            (
+                active.current_id(),
+                name,
+                active.is_shiny,
+                stage,
+                active.ribbons.clone(),
+            )
+        } else if let Some(first_dex) = self.state.dex.first() {
+            let stage = first_dex.chain_order.len().max(1) as u32;
+            let req_id = first_dex.final_id;
+            let name = first_dex
+                .names
+                .as_ref()
+                .and_then(|nm| nm.get(&req_id))
+                .and_then(|langs| self.state.language.resolve_name(langs))
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("Pokémon #{}", req_id));
+            (
+                req_id,
+                name,
+                first_dex.is_shiny,
+                stage,
+                first_dex.ribbons.clone(),
+            )
+        } else {
+            return Err("No companion or registered Pokémon available for battle!".to_string());
+        };
+
+        let player = crate::domain::battle::build_fighter(
+            fighter_id,
+            &fighter_name,
+            is_shiny,
+            stage,
+            ribbons.len() as u32,
+            self.is_mega_overdrive,
+        );
+
+        let opponent = crate::domain::battle::generate_random_opponent(stage);
+        let battle_id = Uuid::new_v4().to_string();
+
+        let initial_log = crate::domain::battle::BattleLogEntry {
+            id: Uuid::new_v4().to_string(),
+            text: format!("Wild {} appeared! Go, {}!", opponent.name, player.name),
+            actor: "system".into(),
+            damage: None,
+            is_crit: false,
+            effectiveness: "normal".into(),
+            timestamp: (self.clock)().timestamp_millis() as u64,
+        };
+
+        self.state.active_battle = Some(crate::domain::battle::ActiveBattleState {
+            battle_id,
+            turn_count: 1,
+            player,
+            opponent,
+            is_player_turn: true,
+            battle_phase: "selecting".into(),
+            battle_log: vec![initial_log],
+            reward_bp: 0,
+            reward_coins: 0,
+            won: None,
+        });
+
+        self.save();
+        Ok(())
+    }
+
+    pub fn execute_battle_move(&mut self, move_index: usize) -> Result<(), String> {
+        let mut battle = self
+            .state
+            .active_battle
+            .take()
+            .ok_or_else(|| "No active battle in progress".to_string())?;
+
+        if battle.battle_phase != "selecting" {
+            self.state.active_battle = Some(battle);
+            return Err("Battle is not in move selection phase".to_string());
+        }
+
+        if move_index >= battle.player.moves.len() {
+            self.state.active_battle = Some(battle);
+            return Err("Invalid move index".to_string());
+        }
+
+        // Deduct player PP
+        if battle.player.moves[move_index].current_pp > 0 {
+            battle.player.moves[move_index].current_pp -= 1;
+        }
+
+        let player_move = battle.player.moves[move_index].clone();
+        let player_priority = player_move.effect.as_deref() == Some("priority");
+
+        // AI chooses opponent move
+        let opp_move_idx = crate::domain::battle::select_ai_move(&battle.opponent, &battle.player);
+        if opp_move_idx < battle.opponent.moves.len()
+            && battle.opponent.moves[opp_move_idx].current_pp > 0
+        {
+            battle.opponent.moves[opp_move_idx].current_pp -= 1;
+        }
+        let opp_move = battle
+            .opponent
+            .moves
+            .get(opp_move_idx)
+            .cloned()
+            .unwrap_or_else(|| crate::domain::battle::BattleMove {
+                id: "struggle".into(),
+                name: "Struggle".into(),
+                element: "Normal".into(),
+                category: crate::domain::battle::MoveCategory::Physical,
+                power: 50,
+                accuracy: 100,
+                current_pp: 1,
+                max_pp: 1,
+                description: "Used when no moves remain.".into(),
+                effect: None,
+            });
+        let opp_priority = opp_move.effect.as_deref() == Some("priority");
+
+        let player_goes_first = if player_priority != opp_priority {
+            player_priority
+        } else {
+            battle.player.speed >= battle.opponent.speed
+        };
+
+        let ts = (self.clock)().timestamp_millis() as u64;
+
+        if player_goes_first {
+            // Player attacks opponent
+            let res = crate::domain::battle::calculate_attack(
+                &battle.player,
+                &battle.opponent,
+                &player_move,
+                false,
+            );
+            if res.heal_amount > 0 {
+                battle.player.current_hp =
+                    (battle.player.current_hp + res.heal_amount).min(battle.player.max_hp);
+            }
+            battle.opponent.current_hp = battle.opponent.current_hp.saturating_sub(res.damage);
+
+            let eff_text = if res.effectiveness > 1.0 {
+                " It's super effective!"
+            } else if res.effectiveness < 1.0 && res.effectiveness > 0.0 {
+                " It's not very effective..."
+            } else if res.effectiveness == 0.0 {
+                " It had no effect!"
+            } else {
+                ""
+            };
+            let crit_text = if res.is_crit { " Critical hit!" } else { "" };
+            let action_desc = if let Some(ref buff) = res.buff_text {
+                format!("{} used {}! {}", battle.player.name, player_move.name, buff)
+            } else {
+                format!(
+                    "{} used {}!{}{}{}",
+                    battle.player.name,
+                    player_move.name,
+                    crit_text,
+                    eff_text,
+                    if res.damage > 0 {
+                        format!(" ({} DMG)", res.damage)
+                    } else {
+                        "".into()
+                    }
+                )
+            };
+
+            battle.battle_log.insert(
+                0,
+                crate::domain::battle::BattleLogEntry {
+                    id: Uuid::new_v4().to_string(),
+                    text: action_desc,
+                    actor: "player".into(),
+                    damage: if res.damage > 0 {
+                        Some(res.damage)
+                    } else {
+                        None
+                    },
+                    is_crit: res.is_crit,
+                    effectiveness: if res.effectiveness > 1.0 {
+                        "super".into()
+                    } else if res.effectiveness < 1.0 {
+                        "not_very".into()
+                    } else {
+                        "normal".into()
+                    },
+                    timestamp: ts,
+                },
+            );
+
+            // Check if Opponent fainted
+            if battle.opponent.is_fainted() {
+                battle.opponent.current_hp = 0;
+                battle.battle_phase = "won".into();
+                battle.won = Some(true);
+
+                let base_bp = 25;
+                let streak_bonus = (self.state.battle_stats.win_streak / 3) * 10;
+                let final_bp = base_bp + streak_bonus;
+                let coin_mult = if self.is_mega_overdrive { 2 } else { 1 };
+                let final_coins = 100 * coin_mult;
+
+                battle.reward_bp = final_bp;
+                battle.reward_coins = final_coins;
+
+                self.state.bp += final_bp;
+                self.state.battle_stats.wins += 1;
+                self.state.battle_stats.win_streak += 1;
+                self.state.battle_stats.total_battles += 1;
+                self.state.battle_stats.total_bp_earned += final_bp;
+                if self.state.battle_stats.win_streak > self.state.battle_stats.best_streak {
+                    self.state.battle_stats.best_streak = self.state.battle_stats.win_streak;
+                }
+
+                if let Some(active) = self.state.active.as_mut() {
+                    active.add_ribbon("arenaChampion");
+                }
+
+                battle.battle_log.insert(
+                    0,
+                    crate::domain::battle::BattleLogEntry {
+                        id: Uuid::new_v4().to_string(),
+                        text: format!(
+                            "Foe {} fainted! Victory! Earned +{} BP and +{} PokéCoins! 🎉",
+                            battle.opponent.name, final_bp, final_coins
+                        ),
+                        actor: "system".into(),
+                        damage: None,
+                        is_crit: false,
+                        effectiveness: "normal".into(),
+                        timestamp: ts + 1,
+                    },
+                );
+
+                self.add_journal_entry(
+                    "battle",
+                    &format!("Arena Victory vs {}! ⚔️", battle.opponent.name),
+                    &format!(
+                        "{} triumphed in the Arena and claimed +{} BP!",
+                        battle.player.name, final_bp
+                    ),
+                    "⚔️",
+                    Some(battle.player.species_id),
+                    battle.player.is_shiny,
+                );
+
+                self.state.active_battle = Some(battle);
+                self.save();
+                return Ok(());
+            }
+
+            // Opponent retaliates
+            let opp_res = crate::domain::battle::calculate_attack(
+                &battle.opponent,
+                &battle.player,
+                &opp_move,
+                false,
+            );
+            if opp_res.heal_amount > 0 {
+                battle.opponent.current_hp =
+                    (battle.opponent.current_hp + opp_res.heal_amount).min(battle.opponent.max_hp);
+            }
+            battle.player.current_hp = battle.player.current_hp.saturating_sub(opp_res.damage);
+
+            let opp_eff = if opp_res.effectiveness > 1.0 {
+                " It's super effective!"
+            } else if opp_res.effectiveness < 1.0 && opp_res.effectiveness > 0.0 {
+                " It's not very effective..."
+            } else if opp_res.effectiveness == 0.0 {
+                " It had no effect!"
+            } else {
+                ""
+            };
+            let opp_crit = if opp_res.is_crit {
+                " Critical hit!"
+            } else {
+                ""
+            };
+            let opp_desc = if let Some(ref buff) = opp_res.buff_text {
+                format!(
+                    "Foe {} used {}! {}",
+                    battle.opponent.name, opp_move.name, buff
+                )
+            } else {
+                format!(
+                    "Foe {} used {}!{}{}{}",
+                    battle.opponent.name,
+                    opp_move.name,
+                    opp_crit,
+                    opp_eff,
+                    if opp_res.damage > 0 {
+                        format!(" ({} DMG)", opp_res.damage)
+                    } else {
+                        "".into()
+                    }
+                )
+            };
+
+            battle.battle_log.insert(
+                0,
+                crate::domain::battle::BattleLogEntry {
+                    id: Uuid::new_v4().to_string(),
+                    text: opp_desc,
+                    actor: "opponent".into(),
+                    damage: if opp_res.damage > 0 {
+                        Some(opp_res.damage)
+                    } else {
+                        None
+                    },
+                    is_crit: opp_res.is_crit,
+                    effectiveness: if opp_res.effectiveness > 1.0 {
+                        "super".into()
+                    } else if opp_res.effectiveness < 1.0 {
+                        "not_very".into()
+                    } else {
+                        "normal".into()
+                    },
+                    timestamp: ts + 2,
+                },
+            );
+
+            if battle.player.is_fainted() {
+                battle.player.current_hp = 0;
+                battle.battle_phase = "lost".into();
+                battle.won = Some(false);
+
+                let consolation_bp = 5;
+                let consolation_coins = 20;
+                battle.reward_bp = consolation_bp;
+                battle.reward_coins = consolation_coins;
+
+                self.state.bp += consolation_bp;
+                self.state.battle_stats.losses += 1;
+                self.state.battle_stats.win_streak = 0;
+                self.state.battle_stats.total_battles += 1;
+                self.state.battle_stats.total_bp_earned += consolation_bp;
+
+                battle.battle_log.insert(
+                    0,
+                    crate::domain::battle::BattleLogEntry {
+                        id: Uuid::new_v4().to_string(),
+                        text: format!(
+                            "{} fainted! You lost the battle. (+{} BP consolation)",
+                            battle.player.name, consolation_bp
+                        ),
+                        actor: "system".into(),
+                        damage: None,
+                        is_crit: false,
+                        effectiveness: "normal".into(),
+                        timestamp: ts + 3,
+                    },
+                );
+
+                self.add_journal_entry(
+                    "battle",
+                    &format!("Arena Defeat vs {}", battle.opponent.name),
+                    &format!(
+                        "{} fought bravely against {}.",
+                        battle.player.name, battle.opponent.name
+                    ),
+                    "⚔️",
+                    Some(battle.player.species_id),
+                    battle.player.is_shiny,
+                );
+
+                self.state.active_battle = Some(battle);
+                self.save();
+                return Ok(());
+            }
+        } else {
+            // Opponent strikes first
+            let opp_res = crate::domain::battle::calculate_attack(
+                &battle.opponent,
+                &battle.player,
+                &opp_move,
+                false,
+            );
+            if opp_res.heal_amount > 0 {
+                battle.opponent.current_hp =
+                    (battle.opponent.current_hp + opp_res.heal_amount).min(battle.opponent.max_hp);
+            }
+            battle.player.current_hp = battle.player.current_hp.saturating_sub(opp_res.damage);
+
+            let opp_eff = if opp_res.effectiveness > 1.0 {
+                " It's super effective!"
+            } else if opp_res.effectiveness < 1.0 && opp_res.effectiveness > 0.0 {
+                " It's not very effective..."
+            } else if opp_res.effectiveness == 0.0 {
+                " It had no effect!"
+            } else {
+                ""
+            };
+            let opp_crit = if opp_res.is_crit {
+                " Critical hit!"
+            } else {
+                ""
+            };
+            let opp_desc = if let Some(ref buff) = opp_res.buff_text {
+                format!(
+                    "Foe {} used {}! {}",
+                    battle.opponent.name, opp_move.name, buff
+                )
+            } else {
+                format!(
+                    "Foe {} used {}!{}{}{}",
+                    battle.opponent.name,
+                    opp_move.name,
+                    opp_crit,
+                    opp_eff,
+                    if opp_res.damage > 0 {
+                        format!(" ({} DMG)", opp_res.damage)
+                    } else {
+                        "".into()
+                    }
+                )
+            };
+
+            battle.battle_log.insert(
+                0,
+                crate::domain::battle::BattleLogEntry {
+                    id: Uuid::new_v4().to_string(),
+                    text: opp_desc,
+                    actor: "opponent".into(),
+                    damage: if opp_res.damage > 0 {
+                        Some(opp_res.damage)
+                    } else {
+                        None
+                    },
+                    is_crit: opp_res.is_crit,
+                    effectiveness: if opp_res.effectiveness > 1.0 {
+                        "super".into()
+                    } else if opp_res.effectiveness < 1.0 {
+                        "not_very".into()
+                    } else {
+                        "normal".into()
+                    },
+                    timestamp: ts,
+                },
+            );
+
+            if battle.player.is_fainted() {
+                battle.player.current_hp = 0;
+                battle.battle_phase = "lost".into();
+                battle.won = Some(false);
+
+                let consolation_bp = 5;
+                let consolation_coins = 20;
+                battle.reward_bp = consolation_bp;
+                battle.reward_coins = consolation_coins;
+
+                self.state.bp += consolation_bp;
+                self.state.battle_stats.losses += 1;
+                self.state.battle_stats.win_streak = 0;
+                self.state.battle_stats.total_battles += 1;
+                self.state.battle_stats.total_bp_earned += consolation_bp;
+
+                battle.battle_log.insert(
+                    0,
+                    crate::domain::battle::BattleLogEntry {
+                        id: Uuid::new_v4().to_string(),
+                        text: format!(
+                            "{} fainted! You lost the battle. (+{} BP consolation)",
+                            battle.player.name, consolation_bp
+                        ),
+                        actor: "system".into(),
+                        damage: None,
+                        is_crit: false,
+                        effectiveness: "normal".into(),
+                        timestamp: ts + 1,
+                    },
+                );
+
+                self.add_journal_entry(
+                    "battle",
+                    &format!("Arena Defeat vs {}", battle.opponent.name),
+                    &format!(
+                        "{} fought bravely against {}.",
+                        battle.player.name, battle.opponent.name
+                    ),
+                    "⚔️",
+                    Some(battle.player.species_id),
+                    battle.player.is_shiny,
+                );
+
+                self.state.active_battle = Some(battle);
+                self.save();
+                return Ok(());
+            }
+
+            // Player retaliates
+            let res = crate::domain::battle::calculate_attack(
+                &battle.player,
+                &battle.opponent,
+                &player_move,
+                false,
+            );
+            if res.heal_amount > 0 {
+                battle.player.current_hp =
+                    (battle.player.current_hp + res.heal_amount).min(battle.player.max_hp);
+            }
+            battle.opponent.current_hp = battle.opponent.current_hp.saturating_sub(res.damage);
+
+            let eff_text = if res.effectiveness > 1.0 {
+                " It's super effective!"
+            } else if res.effectiveness < 1.0 && res.effectiveness > 0.0 {
+                " It's not very effective..."
+            } else if res.effectiveness == 0.0 {
+                " It had no effect!"
+            } else {
+                ""
+            };
+            let crit_text = if res.is_crit { " Critical hit!" } else { "" };
+            let action_desc = if let Some(ref buff) = res.buff_text {
+                format!("{} used {}! {}", battle.player.name, player_move.name, buff)
+            } else {
+                format!(
+                    "{} used {}!{}{}{}",
+                    battle.player.name,
+                    player_move.name,
+                    crit_text,
+                    eff_text,
+                    if res.damage > 0 {
+                        format!(" ({} DMG)", res.damage)
+                    } else {
+                        "".into()
+                    }
+                )
+            };
+
+            battle.battle_log.insert(
+                0,
+                crate::domain::battle::BattleLogEntry {
+                    id: Uuid::new_v4().to_string(),
+                    text: action_desc,
+                    actor: "player".into(),
+                    damage: if res.damage > 0 {
+                        Some(res.damage)
+                    } else {
+                        None
+                    },
+                    is_crit: res.is_crit,
+                    effectiveness: if res.effectiveness > 1.0 {
+                        "super".into()
+                    } else if res.effectiveness < 1.0 {
+                        "not_very".into()
+                    } else {
+                        "normal".into()
+                    },
+                    timestamp: ts + 2,
+                },
+            );
+
+            if battle.opponent.is_fainted() {
+                battle.opponent.current_hp = 0;
+                battle.battle_phase = "won".into();
+                battle.won = Some(true);
+
+                let base_bp = 25;
+                let streak_bonus = (self.state.battle_stats.win_streak / 3) * 10;
+                let final_bp = base_bp + streak_bonus;
+                let coin_mult = if self.is_mega_overdrive { 2 } else { 1 };
+                let final_coins = 100 * coin_mult;
+
+                battle.reward_bp = final_bp;
+                battle.reward_coins = final_coins;
+
+                self.state.bp += final_bp;
+                self.state.battle_stats.wins += 1;
+                self.state.battle_stats.win_streak += 1;
+                self.state.battle_stats.total_battles += 1;
+                self.state.battle_stats.total_bp_earned += final_bp;
+                if self.state.battle_stats.win_streak > self.state.battle_stats.best_streak {
+                    self.state.battle_stats.best_streak = self.state.battle_stats.win_streak;
+                }
+
+                if let Some(active) = self.state.active.as_mut() {
+                    active.add_ribbon("arenaChampion");
+                }
+
+                battle.battle_log.insert(
+                    0,
+                    crate::domain::battle::BattleLogEntry {
+                        id: Uuid::new_v4().to_string(),
+                        text: format!(
+                            "Foe {} fainted! Victory! Earned +{} BP and +{} PokéCoins! 🎉",
+                            battle.opponent.name, final_bp, final_coins
+                        ),
+                        actor: "system".into(),
+                        damage: None,
+                        is_crit: false,
+                        effectiveness: "normal".into(),
+                        timestamp: ts + 3,
+                    },
+                );
+
+                self.add_journal_entry(
+                    "battle",
+                    &format!("Arena Victory vs {}! ⚔️", battle.opponent.name),
+                    &format!(
+                        "{} triumphed in the Arena and claimed +{} BP!",
+                        battle.player.name, final_bp
+                    ),
+                    "⚔️",
+                    Some(battle.player.species_id),
+                    battle.player.is_shiny,
+                );
+
+                self.state.active_battle = Some(battle);
+                self.save();
+                return Ok(());
+            }
+        }
+
+        battle.turn_count += 1;
+        self.state.active_battle = Some(battle);
+        self.save();
+        Ok(())
+    }
+
+    pub fn flee_battle(&mut self) -> Result<(), String> {
+        if let Some(mut battle) = self.state.active_battle.take() {
+            battle.battle_phase = "fled".into();
+            self.state.battle_stats.win_streak = 0;
+            self.save();
+        }
+        self.state.active_battle = None;
+        self.save();
+        Ok(())
+    }
+
+    pub fn clear_battle(&mut self) {
+        self.state.active_battle = None;
+        self.save();
+    }
+
+    pub fn buy_bp_item(&mut self, item_id: &str) -> Result<String, String> {
+        let (cost, item_kind, item_name) = match item_id {
+            "rareCandy" => (20, "rareCandy", "Rare Candy (+10M XP)"),
+            "mint" => (15, "natureMint", "Nature Mint"),
+            "oranBerry" => (15, "oranBerry", "Oran Berry (+15M XP)"),
+            "sitrusBerry" => (35, "sitrusBerry", "Sitrus Berry (+50M XP + Aura)"),
+            "shinyCharm" => (100, "shinyCharm", "Shiny Charm (Permanent Boost)"),
+            "epicEgg" => (50, "egg_epic", "Epic Egg (Guaranteed Stage 3)"),
+            "legendaryEgg" => (120, "egg_legendary", "Legendary Egg (Mythical/Legendary)"),
+            _ => return Err(format!("Unknown BP item: {}", item_id)),
+        };
+
+        if self.state.bp < cost {
+            return Err(format!(
+                "Insufficient Battle Points! Need {} BP, but you have {} BP.",
+                cost, self.state.bp
+            ));
+        }
+
+        self.state.bp -= cost;
+
+        if item_kind.starts_with("egg_") {
+            let tier = match item_kind {
+                "egg_legendary" => crate::domain::companion::Rarity::Legendary,
+                _ => crate::domain::companion::Rarity::Rare,
+            };
+            self.state.egg_tier = Some(tier);
+        } else {
+            *self
+                .state
+                .inventory
+                .entry(item_kind.to_string())
+                .or_insert(0) += 1;
+        }
+
+        self.add_journal_entry(
+            "shop",
+            &format!("Redeemed {} in BP Shop!", item_name),
+            &format!("Spent {} BP to acquire {}.", cost, item_name),
+            "🏆",
+            None,
+            false,
+        );
+
+        self.save();
+        Ok(item_name.to_string())
+    }
+
     pub fn check_and_award_ribbons(&mut self) {
         let is_overdrive = self.is_mega_overdrive;
         let hour = (self.clock)().time().hour();
@@ -4459,6 +5193,66 @@ mod tests {
             true,
         );
         assert_eq!(s.state.daily_history.get("2026-08-21"), Some(&1000));
+    }
+
+    #[test]
+    fn test_battle_arena_lifecycle_and_rewards() {
+        let mut s = store_for(linear3(), vec![1, 2, 3]);
+
+        // 1. Egg cracking and hatching Bulbasaur
+        s.hatch(1);
+        assert!(s.has_active());
+
+        // 2. Start Arena Battle
+        assert!(s.state.active_battle.is_none());
+        assert_eq!(s.state.bp, 0);
+        let start_res = s.start_battle(None);
+        assert!(start_res.is_ok());
+        assert!(s.state.active_battle.is_some());
+
+        let battle = s.state.active_battle.as_ref().unwrap();
+        assert_eq!(battle.turn_count, 1);
+        assert_eq!(battle.battle_phase, "selecting");
+        assert_eq!(battle.player.name, "P1");
+        assert_eq!(battle.player.moves.len(), 4);
+        assert_eq!(battle.battle_log.len(), 1);
+
+        // 3. Execute Battle Moves
+        let move_res = s.execute_battle_move(0);
+        assert!(move_res.is_ok());
+
+        // 4. Play through battle to completion
+        for _ in 0..20 {
+            if let Some(b) = s.state.active_battle.as_ref() {
+                if b.battle_phase == "selecting" {
+                    let _ = s.execute_battle_move(0);
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        // 5. Check Battle Completion and BP Awarding
+        assert!(s.state.bp > 0);
+        assert!(s.state.battle_stats.total_battles >= 1);
+        assert_eq!(s.state.battle_stats.total_bp_earned, s.state.bp);
+
+        // 6. BP Shop Purchase
+        s.state.bp = 50;
+        let buy_res = s.buy_bp_item("rareCandy");
+        assert!(buy_res.is_ok());
+        assert_eq!(s.state.bp, 30);
+        assert_eq!(*s.state.inventory.get("rareCandy").unwrap_or(&0), 1);
+
+        // 7. Fleeing Battle
+        let _ = s.start_battle(None);
+        assert!(s.state.active_battle.is_some());
+        let flee_res = s.flee_battle();
+        assert!(flee_res.is_ok());
+        assert!(s.state.active_battle.is_none());
+        assert_eq!(s.state.battle_stats.win_streak, 0);
     }
 
     impl CompanionStore {

@@ -105,6 +105,9 @@ pub struct CompanionView {
     pub avatar_species_id: Option<i64>,
     pub journal: Vec<JournalEntry>,
     pub daily_history: HashMap<String, i64>,
+    pub bp: u32,
+    pub battle_stats: crate::domain::battle::BattleStatsRecord,
+    pub active_battle: Option<crate::domain::battle::ActiveBattleState>,
 }
 
 #[derive(Serialize)]
@@ -317,6 +320,9 @@ fn build_snapshot(inner: &StateInner) -> Snapshot {
         avatar_species_id: c.state.avatar_species_id,
         journal: c.state.journal.clone(),
         daily_history: c.state.daily_history.clone(),
+        bp: c.state.bp,
+        battle_stats: c.state.battle_stats.clone(),
+        active_battle: c.state.active_battle.clone(),
     };
 
     let usage = UsageView {
@@ -584,6 +590,47 @@ pub fn set_trainer_avatar(
 ) -> Result<Snapshot, String> {
     let mut inner = state.lock().map_err(|e| e.to_string())?;
     inner.companion.set_trainer_avatar(species_id);
+    Ok(build_snapshot(&inner))
+}
+
+#[tauri::command]
+pub fn start_battle(
+    state: State<'_, AppState>,
+    species_id: Option<i64>,
+) -> Result<Snapshot, String> {
+    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    inner.companion.start_battle(species_id)?;
+    Ok(build_snapshot(&inner))
+}
+
+#[tauri::command]
+pub fn execute_battle_move(
+    state: State<'_, AppState>,
+    move_index: usize,
+) -> Result<Snapshot, String> {
+    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    inner.companion.execute_battle_move(move_index)?;
+    Ok(build_snapshot(&inner))
+}
+
+#[tauri::command]
+pub fn flee_battle(state: State<'_, AppState>) -> Result<Snapshot, String> {
+    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    inner.companion.flee_battle()?;
+    Ok(build_snapshot(&inner))
+}
+
+#[tauri::command]
+pub fn clear_battle(state: State<'_, AppState>) -> Result<Snapshot, String> {
+    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    inner.companion.clear_battle();
+    Ok(build_snapshot(&inner))
+}
+
+#[tauri::command]
+pub fn buy_bp_item(state: State<'_, AppState>, item_id: String) -> Result<Snapshot, String> {
+    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    inner.companion.buy_bp_item(&item_id)?;
     Ok(build_snapshot(&inner))
 }
 
