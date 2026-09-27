@@ -16,6 +16,7 @@ pub mod antigravity;
 pub mod cache;
 pub mod claude_limits;
 pub mod local;
+pub mod opencode_go;
 pub mod pokeapi;
 pub mod reader;
 

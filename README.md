@@ -96,10 +96,11 @@ It monitors the AI coding tokens you burn across 10 tools (Claude Code, Codex, G
 - **Sleep & Wake Cycle**: Automatically curls up to sleep with floating `Zzz` bubbles and a gentle purple moon progress ring after 15 minutes of coding inactivity. Wakes up the moment you run an AI prompt!
 - **Berry Feeding & Golden Aura**: Feed Sitrus Berries in the PokéShop to bestow a 1-hour glistening Golden Sparkle Aura (`✨`, `⭐`).
 
-### 📊 5. Usage Analytics & Claude Rate Limits
+### 📊 5. Usage Analytics & Rate Limits
 - **Aggregated Summaries**: Real-time token consumption metrics for **Today**, **This Week**, and **This Month**, plus estimated cost in USD.
 - **Active AI Tools Breakdown**: Proportional horizontal tool share bar and detailed per-provider breakdown lists.
 - **Claude OAuth Rate Limit Tracking**: Direct integration with `~/.claude/.credentials.json` to monitor 5-hour session windows and 7-day weekly rate limits.
+- **OpenCode Zen Go quota**: Direct integration with the official OpenCode Zen Go usage API (`GET https://opencode.ai/zen/go/v1/usage`) to monitor rolling 5-hour, weekly, and monthly utilisation with reset times. The API key is read from the `OPENCODE_GO_API_KEY` environment variable, falling back to `${HERMES_HOME}/.env` when running under Hermes portable.
 
 ### 🎒 6. Shop & Bag Economy
 - **Wallet Balance**: Tokens earned by coding become available currency to spend in the PokéShop.

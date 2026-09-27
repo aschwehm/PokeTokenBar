@@ -217,6 +217,18 @@
     planDisplay?: string | null;
   }
 
+  interface ZenGoBucket {
+    status?: string | null;
+    percent?: number | null;
+    resetsAt?: string | null;
+  }
+
+  interface ZenGoLimits {
+    rolling?: ZenGoBucket | null;
+    weekly?: ZenGoBucket | null;
+    monthly?: ZenGoBucket | null;
+  }
+
   interface UsageView {
     todayTotalTokens: number;
     todayCostTotal: number;
@@ -225,6 +237,7 @@
     burnTier: string;
     snapshots: ProviderView[];
     limits?: LimitStatus | null;
+    zenGoLimits?: ZenGoLimits | null;
   }
 
   interface PokedexDetails {
@@ -1844,6 +1857,50 @@
                     </div>
                     <div class="limit-track">
                       <div class="limit-fill" style="width: {sd.utilization !== null && sd.utilization !== undefined ? getUtilizationPercent(sd.utilization) : 0}%;"></div>
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+
+            {#if u.zenGoLimits && (u.zenGoLimits.rolling || u.zenGoLimits.weekly || u.zenGoLimits.monthly)}
+              <div class="panel-card">
+                <div class="limits-header">
+                  <span class="panel-title-red">OpenCode Go Quota</span>
+                </div>
+                {#if u.zenGoLimits.rolling}
+                  {@const rg = u.zenGoLimits.rolling}
+                  <div class="limit-block">
+                    <div class="limit-labels">
+                      <span>5-Hour Rolling Window</span>
+                      <span class="limit-pct">{rg.percent !== null && rg.percent !== undefined ? formatUtilization(rg.percent) : "—"}{rg.status && rg.status !== "ok" ? ` · ${rg.status}` : ""}</span>
+                    </div>
+                    <div class="limit-track">
+                      <div class="limit-fill" style="width: {rg.percent !== null && rg.percent !== undefined ? getUtilizationPercent(rg.percent) : 0}%;"></div>
+                    </div>
+                  </div>
+                {/if}
+                {#if u.zenGoLimits.weekly}
+                  {@const wk = u.zenGoLimits.weekly}
+                  <div class="limit-block">
+                    <div class="limit-labels">
+                      <span>Weekly Window</span>
+                      <span class="limit-pct">{wk.percent !== null && wk.percent !== undefined ? formatUtilization(wk.percent) : "—"}{wk.status && wk.status !== "ok" ? ` · ${wk.status}` : ""}</span>
+                    </div>
+                    <div class="limit-track">
+                      <div class="limit-fill" style="width: {wk.percent !== null && wk.percent !== undefined ? getUtilizationPercent(wk.percent) : 0}%;"></div>
+                    </div>
+                  </div>
+                {/if}
+                {#if u.zenGoLimits.monthly}
+                  {@const mo = u.zenGoLimits.monthly}
+                  <div class="limit-block">
+                    <div class="limit-labels">
+                      <span>Monthly Window</span>
+                      <span class="limit-pct">{mo.percent !== null && mo.percent !== undefined ? formatUtilization(mo.percent) : "—"}{mo.status && mo.status !== "ok" ? ` · ${mo.status}` : ""}</span>
+                    </div>
+                    <div class="limit-track">
+                      <div class="limit-fill" style="width: {mo.percent !== null && mo.percent !== undefined ? getUtilizationPercent(mo.percent) : 0}%;"></div>
                     </div>
                   </div>
                 {/if}

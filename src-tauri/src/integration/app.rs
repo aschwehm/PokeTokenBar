@@ -24,6 +24,7 @@ pub struct StateInner {
     pub usage: UsageStore,
     pub companion: CompanionStore,
     pub limits: Option<crate::providers::claude_limits::LimitStatus>,
+    pub zen_go: Option<crate::providers::opencode_go::ZenGoUsage>,
 }
 
 impl StateInner {
@@ -32,6 +33,7 @@ impl StateInner {
             usage: UsageStore::default(),
             companion: CompanionStore::new_default(),
             limits: None,
+            zen_go: None,
         }
     }
 
@@ -163,6 +165,7 @@ pub struct UsageView {
     pub snapshots: Vec<ProviderView>,
     pub last_updated: Option<i64>,
     pub limits: Option<crate::providers::claude_limits::LimitStatus>,
+    pub zen_go_limits: Option<crate::providers::opencode_go::ZenGoUsage>,
 }
 
 #[derive(Serialize)]
@@ -368,6 +371,7 @@ fn build_snapshot(inner: &StateInner) -> Snapshot {
         snapshots: u.snapshots.iter().map(provider_view).collect(),
         last_updated: u.last_updated.map(|d| d.timestamp_millis()),
         limits: inner.limits.clone(),
+        zen_go_limits: inner.zen_go.clone(),
     };
 
     Snapshot { companion, usage }
@@ -405,6 +409,11 @@ pub async fn refresh(
                 None
             };
 
+        // 1b. Fetch the OpenCode Zen Go cloud quota (env / HERMES_HOME `.env`
+        // key, no interactive prompt) WITHOUT locking state.
+        let zen_go = crate::providers::opencode_go::resolve_api_key()
+            .and_then(|key| crate::providers::opencode_go::fetch_zen_go_usage(&key).ok());
+
         // 2. Heavy filesystem scan across all providers WITHOUT locking state!
         let providers = StateInner::create_default_providers();
         let snapshots = UsageStore::collect_snapshots(&providers);
@@ -414,6 +423,9 @@ pub async fn refresh(
             let mut inner = state.lock().map_err(|e| e.to_string())?;
             if limits.is_some() {
                 inner.limits = limits;
+            }
+            if zen_go.is_some() {
+                inner.zen_go = zen_go;
             }
             let prev_seq = inner.companion.celebration_seq;
             let StateInner {
